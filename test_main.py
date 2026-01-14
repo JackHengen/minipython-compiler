@@ -1,4 +1,5 @@
 from main import Tokenizer, Parser
+import time
 
 first_example = """class A [
     fields x
@@ -136,3 +137,26 @@ optimal = """main with x, y, z:
     z = (4 + 5)
     print(z)
 """
+
+def test_tokenize():
+    t = Tokenizer(first_example)
+    print(t.tokenize())
+
+def test_tokenize_cache():
+    t = Tokenizer(first_example)
+
+    start_time = time.perf_counter()
+    t.tokenize()
+    end_time = time.perf_counter()
+    time1 = end_time - start_time
+
+    start_time = time.perf_counter()
+    t.tokenize()
+    end_time = time.perf_counter()
+    time2 = end_time - start_time
+
+    print(f"time1: {time1}, time2: {time2}")
+    assert time1 > time2
+
+
+    
