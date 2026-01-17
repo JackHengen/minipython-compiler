@@ -137,7 +137,7 @@ optimal = """main with x, y, z:
     z = (4 + 5)
     print(z)
 """
-def test_peek():
+def test_tokenize_peek():
     t = Tokenizer(optimal)
     tok = t.peek()
     tok2 = t.peek()
@@ -167,7 +167,7 @@ def test_tokenize_cache():
     assert time1 > time2
 
 
-def test_paren_expr():
+def test_parse_paren_expr():
     t1 = Tokenizer("(9 + 10)")
     t2 = Tokenizer("(this + (9 * 10))")
     t3 = Tokenizer("((111 - 17) / variable)")
@@ -183,7 +183,7 @@ def test_paren_expr():
     tree = p3.parse_expr()
     print(tree)
     
-def test_method_expr():
+def test_parse_method_expr():
     t1 = Tokenizer("^3.methodname()")
     t2 = Tokenizer("^h.y(8,(3*9),variablename)")
     t3 = Tokenizer("^^obj.x().l()")
@@ -198,3 +198,83 @@ def test_method_expr():
     print(tree)
     tree = p3.parse_expr()
     print(tree)
+
+def test_parse_field_read_expr():
+    t1 = Tokenizer("&e.a")
+    t2 = Tokenizer("&(x / (3+4)).bar")
+    t3 = Tokenizer("&&&abc.def.ghi")
+
+    p1 = Parser(t1)
+    p2 = Parser(t2)
+    p3 = Parser(t3)
+
+    tree = p1.parse_expr()
+    print(tree)
+    tree = p2.parse_expr()
+    print(tree)
+    tree = p3.parse_expr()
+    print(tree)
+    
+
+def test_parse_class_instantiation_expr():
+    t1 = Tokenizer("@CLASS")
+    t2 = Tokenizer("@BAZ")
+
+    p1 = Parser(t1)
+    p2 = Parser(t2)
+
+    tree = p1.parse_expr()
+    print(tree)
+    tree = p2.parse_expr()
+    print(tree)
+
+def test_parse_this_expr():
+    tree = Parser(Tokenizer("this")).parse_expr()
+    print(tree)
+
+def test_parse_assignment_stmt():
+    t1 = Tokenizer("x = 3")
+    t2 = Tokenizer("y = (14 * 79)")
+    t3 = Tokenizer("_ = ^z.f(3)")
+    t4 = Tokenizer("z = &n.t")
+
+    p1 = Parser(t1)
+    p2 = Parser(t2)
+    p3 = Parser(t3)
+    p4 = Parser(t4)
+
+    tree = p1.parse_expr()
+    print(tree)
+    tree = p2.parse_expr()
+    print(tree)
+    tree = p3.parse_expr()
+    print(tree)
+    tree = p4.parse_expr()
+    print(tree)
+
+def test_parse_field_update_stmt():
+    pass
+
+def test_parse_if_else_stmt():
+    pass
+
+def test_parse_if_only_stmt():
+    pass
+
+def test_while_stmt():
+    pass
+
+def test_parse_return_stmt():
+    pass
+
+def test_parse_print_stmt():
+    pass
+
+def test_parse_class_declaration():
+    pass
+
+def test_parse_method_declaration():
+    pass
+
+def test_parse_program_declaration():
+    pass
