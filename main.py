@@ -269,15 +269,11 @@ class Parser:
         match tok.type:
             case TokenType.LPAREN:
                 left = self.parse_expr()
-                print(left)
                 op = self.t.get_next()
-                print(op)
                 if op.type not in OPERATORS:
                     raise SyntaxError("Invalid operator on parenthesized expression")
                 right = self.parse_expr()
-                print(right)
                 rparen = self.t.get_next()
-                print(rparen)
                 if rparen.type != TokenType.RPAREN:
                     raise SyntaxError("No closing parenthesis on parenthesized expression")
                 return ParenExpression(left,op,right)
@@ -286,7 +282,7 @@ class Parser:
             case TokenType.NUMBER:
                 return NumExpression(tok.lexeme)
             case TokenType.CARET:
-                e = self.t.parse_expr()
+                e = self.parse_expr()
                 dot = self.t.get_next()
                 if dot.type != TokenType.DOT:
                     raise SyntaxError("No dot used when accessing method")
@@ -294,15 +290,20 @@ class Parser:
                 if method_name.type != TokenType.IDENTIFIER:
                     raise SyntaxError("Method name is not an identifier")
                 lparen = self.t.get_next()
-                if lparen != TokenType.lparen:
+                if lparen.type != TokenType.LPAREN:
                     raise SyntaxError("Invalid argument structure to method")
                 args = []
-                while((arg := self.t.peek()).type != TokenType.RPAREN):
+                t = self.t.peek()
+                if t.type != TokenType.RPAREN:
                     e = self.parse_expr()
-                    comma = self.t.get_next()
-                    if comma.type != TokenType.COMMA:
-                        raise SyntaxError("Invalid argument structure to method")
                     args.append(e)
+                    while((t := self.t.get_next()).type == TokenType.COMMA):
+                        e = self.parse_expr()
+                        args.append(e)
+                    if t.type != TokenType.RPAREN:
+                        raise SyntaxError("Invalid argument structure to method")
+                else:
+                    self.t.get_next()
 
                 return MethodExpression(e,method_name.lexeme,args)
             case TokenType.AMP:
