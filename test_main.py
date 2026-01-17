@@ -137,10 +137,18 @@ optimal = """main with x, y, z:
     z = (4 + 5)
     print(z)
 """
+def test_peek():
+    t = Tokenizer(optimal)
+    tok = t.peek()
+    tok2 = t.peek()
+    assert tok.type == tok2.type
+    assert tok.lexeme == tok2.lexeme
+    print(tok,tok2)
 
 def test_tokenize():
     t = Tokenizer(first_example)
     print(t.tokenize())
+
 
 def test_tokenize_cache():
     t = Tokenizer(first_example)
@@ -158,5 +166,19 @@ def test_tokenize_cache():
     print(f"time1: {time1}, time2: {time2}")
     assert time1 > time2
 
+def test_paren_expr():
+    t1 = Tokenizer("(9 + 10)")
+    t2 = Tokenizer("(this + (9 * 10))")
+    t3 = Tokenizer("((111 - 17) / variable)")
+    
+    p1 = Parser(t1)
+    p2 = Parser(t2)
+    p3 = Parser(t3)
 
+    tree = p1.parse_expr()
+    print(tree)
+    tree = p2.parse_expr()
+    print(tree)
+    tree = p3.parse_expr()
+    print(tree)
     

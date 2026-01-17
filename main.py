@@ -2,6 +2,7 @@ import argparse
 from enum import Enum
 from abc import ABC
 import time
+from dataclasses import dataclass
 # objgraph
 
 class TokenType(Enum):
@@ -34,9 +35,10 @@ class TokenType(Enum):
     LOCALS = 26
     FIELDS = 27
     METHOD = 28
-    DIGIT = 29
+    NUMBER = 29
     IDENTIFIER = 30
 
+OPERATORS = [TokenType.PLUS,TokenType.MINUS,TokenType.ASTER,TokenType.SLASH]
 
 
 class Token():
@@ -53,18 +55,24 @@ class Tokenizer:
         self.pos = 0
         self.toks = []
 
+    def peek(self) -> Token:
+        tok = self.get_next()
+        self.pos -= 1
+        return tok
+
     def get_next(self) -> Token:
         if len(self.toks) > self.pos:
             tok = self.toks[self.pos]
             self.pos += 1
             return tok
 
-        while(self.pos < len(self.s) and (c := self.s[self.pos]).isspace()):
-            self.pos += 1
-        self.pos += 1
+        pos = 0  # string pos not the token cache pos
+        while(pos < len(self.s) and (c := self.s[pos]).isspace()):
+            pos += 1
 
-        if self.pos >= len(self.s):
+        if pos >= len(self.s):
             return None
+        pos += 1
 
         tok = None
         if c == "(":
@@ -106,15 +114,15 @@ class Tokenizer:
 
         s = str(c)
         if c.isdigit():
-            while self.pos < len(self.s) and (c:= self.s[self.pos]).isdigit():
+            while pos < len(self.s) and (c:= self.s[pos]).isdigit():
                 s += str(c)
-                self.pos += 1
-            tok = Token(TokenType.DIGIT,s)
+                pos += 1
+            tok = Token(TokenType.NUMBER,s)
 
         if c.isalpha():
-            while self.pos < len(self.s) and (c := self.s[self.pos]).isalpha():
+            while pos < len(self.s) and (c := self.s[pos]).isalpha():
                 s += c
-                self.pos += 1
+                pos += 1
             tok = Token(TokenType.IDENTIFIER,s)
         if s == "if":
             tok = Token(TokenType.IF,s)
@@ -140,31 +148,182 @@ class Tokenizer:
             tok = Token(TokenType.METHOD,s)
 
 
+        self.s = self.s[pos:]
         if tok is None:
             raise ValueError(f"Inappropriate symbol {c}")
         else:
+            self.pos +=1
+            self.toks.append(tok)
             return tok
 
 
     def tokenize(self):
-        while(tok := self.get_next()) is not None:
-            self.toks.append(tok)
+        while(self.get_next()):
+            pass
+        self.pos = 0
         return self.toks
+
+class ASTNode(ABC):
+    pass
+
+
+class Statement(ASTNode):
+    pass
+
+class Expression(ASTNode):
+    pass
+
+@dataclass
+class MethodDeclaration(ASTNode):
+    method_name:str
+    local_vars:list[str]
+    statements:list[Statement]
+
+@dataclass
+class ClassDeclaration(ASTNode):
+    class_name:str
+    fields:list[str]
+    methods:list[MethodDeclaration]
+
+@dataclass
+class Program(ASTNode):
+    classes:list[ClassDeclaration]
+    local_vars:list[str]
+    statements:list[Statement]
+
+@dataclass
+class NumExpression(Expression):
+    num:int
+
+@dataclass
+class VarExpression(Expression):
+    var_name:str
+
+@dataclass
+class ParenExpression(Expression):
+    left:Expression
+    op:str
+    right:Expression
+
+@dataclass
+class MethodExpression(Expression):
+    expr:Expression
+    method_name:str
+    args:list[str]
+
+@dataclass
+class FieldReadExpression(Expression):
+    class_name:str
+    field_name:str
+
+@dataclass
+class NewClassExpression(Expression):
+    class_name:str
+
+@dataclass
+class ThisExpression(Expression):
+    pass
+
+@dataclass
+class AssignVarStatement(Statement):
+    var_name:str
+    val:Expression
+
+@dataclass
+class AssignFieldStatement(Statement):
+    class_name:str
+    var_name:str
+    val:Expression
+
+@dataclass
+class IfStatement(Statement):
+    condition:Expression
+    statements_true:list[Statement]
+    statements_false:list[Statement]
+
+@dataclass
+class IfOnlyStatement(Statement):
+    condition:Expression
+    statements:list[Statement]
+
+@dataclass
+class WhileStatement(Statement):
+    condition:Expression
+    statements:list[Statement]
+
+@dataclass
+class ReturnStatement(Statement):
+    val:Expression
+
+@dataclass
+class PrintStatement(Statement):
+    val:Expression
+
 
 class Parser:
     def __init__(self,t:Tokenizer):
         self.t = t
 
-    def parse_expr():
+    def parse_expr(self) -> Expression:
+        tok = self.t.get_next()
+        match tok.type:
+            case TokenType.LPAREN:
+                left = self.parse_expr()
+                print(left)
+                op = self.t.get_next()
+                print(op)
+                if op.type not in OPERATORS:
+                    raise SyntaxError("Invalid operator on parenthesized expression")
+                right = self.parse_expr()
+                print(right)
+                rparen = self.t.get_next()
+                print(rparen)
+                if rparen.type != TokenType.RPAREN:
+                    raise SyntaxError("No closing parenthesis on parenthesized expression")
+                return ParenExpression(left,op,right)
+            case TokenType.IDENTIFIER:
+                return VarExpression(tok.lexeme)
+            case TokenType.NUMBER:
+                return NumExpression(tok.lexeme)
+            case TokenType.CARET:
+                e = self.t.parse_expr()
+                dot = self.t.get_next()
+                if dot.type != TokenType.DOT:
+                    raise SyntaxError("No dot used when accessing method")
+                method_name = self.t.get_next()
+                if method_name.type != TokenType.IDENTIFIER:
+                    raise SyntaxError("Method name is not an identifier")
+                lparen = self.t.get_next()
+                if lparen != TokenType.lparen:
+                    raise SyntaxError("Invalid argument structure to method")
+                args = []
+                while((arg := self.t.peek()).type != TokenType.RPAREN):
+                    e = self.parse_expr()
+                    comma = self.t.get_next()
+                    if comma.type != TokenType.COMMA:
+                        raise SyntaxError("Invalid argument structure to method")
+                    args.append(e)
+
+                return MethodExpression(e,method_name.lexeme,args)
+            case TokenType.AMP:
+                pass
+            case TokenType.AT:
+                pass
+            case TokenType.THIS:
+                #TODO figure out a representation for this
+                pass
+
+    def parse_statement(self):
         pass
 
-    def parse_statement():
+    def parse_class(self):
         pass
 
-    def parse_class():
+    def parse_method(self):
+        #TODO idk about this one
         pass
 
-    def parse_program():
+    def parse_program(self):
         pass
 
 if __name__ == "__main__":
@@ -175,11 +334,11 @@ if __name__ == "__main__":
     input_group.add_argument("-s","--str","--string")
 
     stage_group = parser.add_mutually_exclusive_group()
-    stage_group.add_argument("-t","--tokenize")
-    stage_group.add_argument("-p","--parse")
-    stage_group.add_argument("-a","--ast")
-    stage_group.add_argument("-c","--cfg","--noopt")
-    stage_group.add_argument("-o","--opt","--optimize","--optimization")
+    stage_group.add_argument("-t","--tokenize",action='store_true')
+    stage_group.add_argument("-p","--parse",action='store_true')
+    stage_group.add_argument("-a","--ast",action='store_true')
+    stage_group.add_argument("-c","--cfg","--noopt",action='store_true')
+    stage_group.add_argument("-o","--opt","--optimize","--optimization",action='store_true')
     args = parser.parse_args()
 
     if args.file:
