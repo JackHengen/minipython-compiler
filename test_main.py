@@ -202,7 +202,7 @@ def test_parse_method_expr():
 def test_parse_field_read_expr():
     t1 = Tokenizer("&e.a")
     t2 = Tokenizer("&(x / (3+4)).bar")
-    t3 = Tokenizer("&&&abc.def.ghi")
+    t3 = Tokenizer("&&abc.def.ghi")
 
     p1 = Parser(t1)
     p2 = Parser(t2)
@@ -236,27 +236,54 @@ def test_parse_assignment_stmt():
     t1 = Tokenizer("x = 3")
     t2 = Tokenizer("y = (14 * 79)")
     t3 = Tokenizer("_ = ^z.f(3)")
-    t4 = Tokenizer("z = &n.t")
 
     p1 = Parser(t1)
     p2 = Parser(t2)
     p3 = Parser(t3)
-    p4 = Parser(t4)
 
-    tree = p1.parse_expr()
+    tree = p1.parse_stmt()
     print(tree)
-    tree = p2.parse_expr()
+    tree = p2.parse_stmt()
     print(tree)
-    tree = p3.parse_expr()
-    print(tree)
-    tree = p4.parse_expr()
+    tree = p3.parse_stmt()
     print(tree)
 
 def test_parse_field_update_stmt():
-    pass
+    t1 = Tokenizer("!x.y = 3")
+    # is this allowed? if so should it be only for fields, like exprs can't be assigned bc we don't know if they come
+    # from something which exists in scope or will be thrown away
+    #t2 = Tokenizer("!&x.y.z = (14 * 79)")
+    t3 = Tokenizer("!name.other = ^z.f(3)")
 
-def test_parse_if_else_stmt():
-    pass
+    p1 = Parser(t1)
+    p3 = Parser(t3)
+
+    tree = p1.parse_stmt()
+    print(tree)
+    tree = p3.parse_stmt()
+    print(tree)
+
+def test_parse_if_stmt():
+    t1 = Tokenizer("""if hi:{
+    x = 9
+    _ = &f.y
+    } else {
+    !name.other = (14 + 20)
+    }""")
+    t2 = Tokenizer("""if ^four.five(): {
+    x = 9
+    } else {
+    x = 10
+    }""")
+
+    p1 = Parser(t1)
+    p2 = Parser(t2)
+
+    tree = p1.parse_stmt()
+    print(tree)
+    tree = p2.parse_stmt()
+    print(tree)
+
 
 def test_parse_if_only_stmt():
     pass

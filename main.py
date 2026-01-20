@@ -3,7 +3,15 @@ from enum import Enum
 from abc import ABC
 import time
 from dataclasses import dataclass
-# objgraph
+# TODO
+# Questions
+# Do we need to end all methods with return?
+# Implement 
+# Figure out newlines
+# No infinite parsing if the while loops don't terminate (check when we return None from tokenizer and end loop and
+# check for that and provide a correct error message
+# Symantic Analyzer
+# Use objgraph for output for parser
 
 class TokenType(Enum):
     LPAREN = 0
@@ -24,19 +32,21 @@ class TokenType(Enum):
     ASTER = 15
     SLASH = 16
     EQUAL = 17
-    IF = 18
-    IFONLY = 19
-    WHILE = 20
-    RETURN = 21
-    PRINT = 22
-    THIS = 23
-    CLASS = 24
-    WITH = 25
-    LOCALS = 26
-    FIELDS = 27
-    METHOD = 28
-    NUMBER = 29
-    IDENTIFIER = 30
+    UNDER = 18
+    IF = 19
+    ELSE = 20
+    IFONLY = 21
+    WHILE = 22
+    RETURN = 23
+    PRINT = 24
+    THIS = 25
+    CLASS = 26
+    WITH = 27
+    LOCALS = 28
+    FIELDS = 29
+    METHOD = 30
+    NUMBER = 31
+    IDENTIFIER = 32
 
 OPERATORS = [TokenType.PLUS,TokenType.MINUS,TokenType.ASTER,TokenType.SLASH]
 
@@ -111,6 +121,8 @@ class Tokenizer:
             tok = Token(TokenType.SLASH, "/")
         if c == "=":
             tok = Token(TokenType.EQUAL, "=")
+        if c == "_":
+            tok = Token(TokenType.UNDER, "_")
 
         s = str(c)
         if c.isdigit():
@@ -126,6 +138,8 @@ class Tokenizer:
             tok = Token(TokenType.IDENTIFIER,s)
         if s == "if":
             tok = Token(TokenType.IF,s)
+        if s == "else":
+            tok = Token(TokenType.ELSE,s)
         if s == "ifonly":
             tok = Token(TokenType.IFONLY,s)
         if s == "while":
@@ -213,11 +227,11 @@ class MethodExpression(Expression):
 
 @dataclass
 class FieldReadExpression(Expression):
-    class_name:str
+    expr:Expression
     field_name:str
 
 @dataclass
-class NewClassExpression(Expression):
+class NewObjExpression(Expression):
     class_name:str
 
 @dataclass
@@ -232,7 +246,7 @@ class AssignVarStatement(Statement):
 @dataclass
 class AssignFieldStatement(Statement):
     class_name:str
-    var_name:str
+    field_name:str
     val:Expression
 
 @dataclass
@@ -307,25 +321,98 @@ class Parser:
 
                 return MethodExpression(e,method_name.lexeme,args)
             case TokenType.AMP:
-                pass
+                e = self.parse_expr()
+                dot = self.t.get_next()
+                if dot.type != TokenType.DOT:
+                    raise SyntaxError("No dot used when accessing field")
+                field_name = self.t.get_next()
+                if field_name.type != TokenType.IDENTIFIER:
+                    raise SyntaxError("Field name is not an identifier")
+                return FieldReadExpression(e,field_name)
             case TokenType.AT:
-                pass
+                cl = self.t.get_next()
+                if cl.type != TokenType.IDENTIFIER:
+                    raise SyntaxError("Class instantiation doesn't refer to a valid identifier")
+                return NewObjExpression(cl)
             case TokenType.THIS:
-                #TODO figure out a representation for this
-                pass
+                return ThisExpression()
+        raise SyntaxError(f"{tok.lexeme} cannot start an expression")
 
-    def parse_statement(self):
+    def parse_stmt(self):
+        def parse_conditional_block(block_type:str):
+            expr = self.parse_expr()
+            colon = self.t.get_next()
+            if colon.type != TokenType.COLON:
+                raise SyntaxError(f"No colon seperator between conditional and statements to execute in {block_type} statement")
+            lbrac = self.t.get_next()
+            if lbrac.type != TokenType.LCBRAC:
+                raise SyntaxError("No curly bracket to open statments after conditional in {block_type} statement")
+            stmts = [self.parse_stmt()] # each block needs at least one statement in it
+            while self.t.peek().type != TokenType.RCBRAC:
+                stmts.append(self.parse_stmt())
+            rbrac = self.t.get_next()
+            return expr,stmts
+
+        tok = self.t.get_next()
+        match tok.type:
+            case TokenType.IDENTIFIER | TokenType.UNDER:
+                eq = self.t.get_next()
+                if eq.type != TokenType.EQUAL:
+                    raise SyntaxError("Variable assignment missing equal sign")
+                expr = self.parse_expr()
+                return AssignVarStatement(tok,expr)
+            case TokenType.EXCLAM:
+                cls = self.t.get_next()
+                if cls.type != TokenType.IDENTIFIER:
+                    raise SyntaxError("Field assignment doesn't refer to valid object identifier")
+                dot = self.t.get_next()
+                if dot.type != TokenType.DOT:
+                    raise SyntaxError("No dot used when referring to field to assign value to")
+                field_name = self.t.get_next()
+                if field_name.type != TokenType.IDENTIFIER:
+                    raise SyntaxError("Field assignment doesn't refer to valid field name identifier")
+                eq = self.t.get_next()
+                if eq.type != TokenType.EQUAL:
+                    raise SyntaxError("Field assignment missing equal sign")
+                expr = self.parse_expr()
+                return AssignFieldStatement(cls,field_name,expr)
+            case TokenType.IF:
+                expr, stmts_if = parse_conditional_block("if")
+                kw_else = self.t.get_next()
+                if kw_else.type != TokenType.ELSE:
+                    raise SyntaxError("No else clause in if statement (must use ifonly if this was intended)")
+                lbrac = self.t.get_next()
+                if lbrac.type != TokenType.LCBRAC:
+                    raise SyntaxError("No curly bracket to open statments after else in if statement")
+                stmts_else = []
+                while self.t.peek().type != TokenType.RCBRAC:
+                    stmts_else.append(self.parse_stmt())
+                rbrac = self.t.get_next()
+                return IfStatement(expr,stmts_if,stmts_else)
+                    
+            case TokenType.IFONLY:
+                return IfOnlyStatement(*parse_conditional_block("ifonly"))
+            case TokenType.WHILE:
+                return WhileStatement(*parse_conditional_block("while"))
+            case TokenType.RETURN:
+                expr = self.parse_expr()
+                return ReturnStatement(expr)
+            case TokenType.PRINT:
+                expr = self.parse_expr()
+                return PrintStatement(expr)
+            
+
+    def parse_cls(self):
         pass
 
-    def parse_class(self):
-        pass
-
-    def parse_method(self):
-        #TODO idk about this one
+    def parse_mthd(self):
         pass
 
     def parse_program(self):
         pass
+
+class Analyzer():
+    pass
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MiniPython Compiler")
@@ -348,22 +435,14 @@ if __name__ == "__main__":
     elif args.str:
         inp = args.str
 
-    stages = ["tokenize","parse","ast","cfg","opt"]
-    stage = float("inf")  # by default we go to last stage
-    for i,val in enumerate(stages):
-        if val in args:
-            stage=i
-            break
-
-    if stage >= 0:
+    # stages = ["tokenize","parse","ast","cfg","opt"]
+    if args.tokenize or args.parse:
         t = Tokenizer(inp)
-        if args.tokenize:
-            toks = t.tokenize()
-            print(toks)
+        toks = t.tokenize()
+        print(toks)
 
-    if stage >= 1:
+    if args.parse:
         p = Parser(t)
-        parse_tree = p.parse_program()
-        if args.parse:
-            # use objgraph
-            pass
+        parse_tree = p.parse_expr()
+        print(parse_tree)
+        # use objgraph
