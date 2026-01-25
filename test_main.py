@@ -263,6 +263,7 @@ def test_parse_field_update_stmt():
     tree = p3.parse_stmt()
     print(tree)
 
+#TODO include newline formatting
 def test_parse_if_stmt():
     t1 = Tokenizer("""if hi:{
     x = 9
@@ -284,10 +285,11 @@ def test_parse_if_stmt():
     tree = p2.parse_stmt()
     print(tree)
 
-
+#TODO include newline formatting
 def test_parse_if_only_stmt():
     pass
 
+#TODO include newline formatting
 def test_while_stmt():
     pass
 
@@ -297,11 +299,14 @@ def test_parse_return_stmt():
 def test_parse_print_stmt():
     pass
 
+#TODO include newline formatting
 def test_parse_class_declaration():
     pass
 
+#TODO include newline formatting
 def test_parse_method_declaration():
     pass
 
+#TODO include newline formatting
 def test_parse_program_declaration():
     pass
