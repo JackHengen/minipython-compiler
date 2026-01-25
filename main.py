@@ -19,36 +19,39 @@ class TokenType(Enum):
     RSBRAC = 3
     LCBRAC = 4
     RCBRAC = 5
-    CARET = 6
-    DOT = 7
-    COMMA = 8
-    COLON = 9
-    AMP = 10
-    AT = 11
-    EXCLAM = 12
-    PLUS = 13
-    MINUS = 14
-    ASTER = 15
-    SLASH = 16
-    EQUAL = 17
-    UNDER = 18
-    NEWLINE = 19
-    IF = 20
-    ELSE = 21
-    IFONLY = 22
-    WHILE = 23
-    RETURN = 24
-    PRINT = 25
-    THIS = 26
-    CLASS = 27
-    WITH = 28
-    LOCALS = 29
-    FIELDS = 30
-    METHOD = 31
-    NUMBER = 32
-    IDENTIFIER = 33
+    LABRAC = 6
+    RABRAC = 7
+    CARET = 8
+    DOT = 9
+    COMMA = 10
+    COLON = 11
+    AMP = 12
+    AT = 13
+    EXCLAM = 14
+    PLUS = 15
+    MINUS = 16
+    ASTER = 17
+    SLASH = 18
+    EQUAL = 19
+    DEQUAL = 20
+    UNDER = 21
+    NEWLINE = 22
+    IF = 23
+    ELSE = 24
+    IFONLY = 25
+    WHILE = 26
+    RETURN = 27
+    PRINT = 28
+    THIS = 29
+    CLASS = 30
+    WITH = 31
+    LOCALS = 32
+    FIELDS = 33
+    METHOD = 34
+    NUMBER = 35
+    IDENTIFIER = 36
 
-OPERATORS = [TokenType.PLUS,TokenType.MINUS,TokenType.ASTER,TokenType.SLASH]
+OPERATORS = [TokenType.PLUS,TokenType.MINUS,TokenType.ASTER,TokenType.SLASH,TokenType.LABRAC,TokenType.RABRAC,TokenType.DEQUAL]
 
 
 class Token():
@@ -119,8 +122,16 @@ class Tokenizer:
             tok = Token(TokenType.ASTER, "*")
         if c == "/":
             tok = Token(TokenType.SLASH, "/")
+        if c == "<":
+            tok = Token(TokenType.LABRAC, "<")
+        if c == ">":
+            tok = Token(TokenType.RABRAC, ">")
         if c == "=":
-            tok = Token(TokenType.EQUAL, "=")
+            if self.s[pos] == "=":
+                pos += 1
+                tok = Token(TokenType.DEQUAL,"==")
+            else:
+                tok = Token(TokenType.EQUAL, "=")
         if c == "_":
             tok = Token(TokenType.UNDER, "_")
         if c == "\n":
@@ -282,7 +293,6 @@ class Parser:
         self.t = t
 
     def parse_expr(self) -> Expression:
-        print(self.t.s)
         tok = self.t.get_next()
         match tok.type:
             case TokenType.LPAREN:
@@ -296,16 +306,16 @@ class Parser:
                     raise SyntaxError("No closing parenthesis on parenthesized expression")
                 return ParenExpression(left,op,right)
             case TokenType.IDENTIFIER:
-                return VarExpression(tok.lexeme)
+                return VarExpression(tok)
             case TokenType.NUMBER:
-                return NumExpression(tok.lexeme)
+                return NumExpression(tok)
             case TokenType.CARET:
                 e = self.parse_expr()
                 dot = self.t.get_next()
                 if dot.type != TokenType.DOT:
                     raise SyntaxError("No dot used when accessing method")
                 method_name = self.t.get_next()
-                if method_name.type != TokenType.IDENTIFIER:
+                if method_name.type not in [TokenType.IDENTIFIER,TokenType.THIS]:
                     raise SyntaxError("Method name is not an identifier")
                 lparen = self.t.get_next()
                 if lparen.type != TokenType.LPAREN:
@@ -322,7 +332,7 @@ class Parser:
                 else:
                     self.t.get_next()
 
-                return MethodExpression(e,method_name.lexeme,args)
+                return MethodExpression(e,method_name,args)
             case TokenType.AMP:
                 e = self.parse_expr()
                 dot = self.t.get_next()
@@ -369,7 +379,7 @@ class Parser:
                 return AssignVarStatement(tok,expr)
             case TokenType.EXCLAM:
                 cls = self.t.get_next()
-                if cls.type != TokenType.IDENTIFIER:
+                if cls.type not in  [TokenType.IDENTIFIER,TokenType.THIS]:
                     raise SyntaxError("Field assignment doesn't refer to valid object identifier")
                 dot = self.t.get_next()
                 if dot.type != TokenType.DOT:
@@ -406,16 +416,34 @@ class Parser:
                 expr = self.parse_expr()
                 return ReturnStatement(expr)
             case TokenType.PRINT:
+                lbrac = self.t.get_next()
+                if lbrac.type != TokenType.LPAREN:
+                    raise SyntaxError("No left parenthesis for print statement arguments")
                 expr = self.parse_expr()
+                rbrac = self.t.get_next()
+                if rbrac.type != TokenType.RPAREN:
+                    raise SyntaxError("No right parenthesis for print statement arguments")
                 return PrintStatement(expr)
 
+    def parse_identifier_list(self):
+        identifiers = []
+        if self.t.peek().type == TokenType.IDENTIFIER:
+            identifiers.append(self.t.get_next())
+            while(self.t.peek().type == TokenType.COMMA):
+                self.t.get_next()
+                name = self.t.get_next()
+                if name.type != TokenType.IDENTIFIER:
+                    raise SyntaxError("identifier list isn't formatted correctly")
+                identifiers.append(name)
+        return identifiers
+
+
     def parse_cls(self):
-        #TODO parse in the newlines now
         cls = self.t.get_next()
         if cls.type != TokenType.CLASS:
             raise SyntaxError(f"{cls.type}: {cls.lexeme} cannot start a class definition")
         ident = self.t.get_next()
-        if cls.type != TokenType.IDENTIFIER:
+        if ident.type != TokenType.IDENTIFIER:
             raise SyntaxError("class definition needs identifier")
         lbrac = self.t.get_next()
         if lbrac.type != TokenType.LSBRAC:
@@ -426,21 +454,14 @@ class Parser:
         fields = self.t.get_next()
         if fields.type !=TokenType.FIELDS:
             raise SyntaxError("no fields definition for class (if no fields exist it still must be empty")
+        field_names = self.parse_identifier_list()
+        print(f'field names {field_names}')
+        print("\n\n")
         nl = self.t.get_next()
         if nl.type != TokenType.NEWLINE:
             raise SyntaxError("no newline between fields and class methods")
-        field_names = []
-        if self.t.peek().type == TokenType.IDENTIFIER:
-            field_names.append(self.t.get_next())
-            while(self.t.peek().type == TokenType.COMMA):
-                self.t.get_next()
-                name = self.t.get_next()
-                if name.type != TokenType.IDENTIFIER:
-                    raise SyntaxError("field names aren't formatted correctly")
-                field_names.append(name)
-
         mths = []
-        while self.t.peek() != TokenType.RSBRAC:
+        while self.t.peek().type != TokenType.RSBRAC:
             mths.append(self.parse_mthd())
         self.t.get_next()
         return ClassDeclaration(ident,field_names,mths)
@@ -456,15 +477,8 @@ class Parser:
         lparen = self.t.get_next()
         if lparen.type != TokenType.LPAREN:
             raise SyntaxError("no opening parenthesis for method arguments")
-        arg_names = []
-        if self.t.peek().type == TokenType.IDENTIFIER:
-            arg_names.append(self.t.get_next())
-            while(self.t.peek().type == TokenType.COMMA):
-                self.t.get_next()
-                name = self.t.get_next()
-                if name.type != TokenType.IDENTIFIER:
-                    raise SyntaxError("argument names aren't formatted correctly")
-                arg_names.append(name)
+        arg_names = self.parse_identifier_list()
+        print(f'arg names: {arg_names}')
         rparen = self.t.get_next()
         if rparen.type != TokenType.RPAREN:
             raise SyntaxError("no closing parenthesis for method arguments")
@@ -472,15 +486,8 @@ class Parser:
         l = self.t.get_next()
         if w.type != TokenType.WITH or l.type !=TokenType.LOCALS:
             raise SyntaxError("no with locals statement in method declaration")
-        local_names = []
-        if self.t.peek().type == TokenType.IDENTIFIER:
-            arg_names.append(self.t.get_next())
-            while(self.t.peek().type == TokenType.COMMA):
-                self.t.get_next()
-                name = self.t.get_next()
-                if name.type != TokenType.IDENTIFIER:
-                    raise SyntaxError("argument names aren't formatted correctly")
-                local_names.append(name)
+        local_names = self.parse_identifier_list()
+        print(f'local_names: {local_names}')
         colon = self.t.get_next()
         if colon.type != TokenType.COLON:
             raise SyntaxError("no colon seperating method signature and statments")
@@ -499,7 +506,7 @@ class Parser:
             if nl.type != TokenType.NEWLINE:
                 raise SyntaxError("no newline between statements within method")
 
-        return MethodDeclaration(ident,arg_names,stmts)
+        return MethodDeclaration(ident,arg_names,local_names,stmts)
 
     def parse_program(self):
         #TODO - make sure to check newlines

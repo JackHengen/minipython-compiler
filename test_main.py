@@ -1,5 +1,6 @@
 from main import Tokenizer, Parser
 import time
+import pytest
 
 first_example = """class A [
     fields x
@@ -117,9 +118,9 @@ nothing = """
 class Foo [
     fields
     method doStuff(x,y,z) with locals r:
-        if (x < y) {
+        if (x < y): {
             r = ((x + y) + z)
-        } else {
+        } else: {
             r = ((x + y) + z)
         }
         print(r)
@@ -263,7 +264,6 @@ def test_parse_field_update_stmt():
     tree = p3.parse_stmt()
     print(tree)
 
-#TODO include newline formatting
 def test_parse_if_stmt():
     t1 = Tokenizer("""if hi:{
     x = 9
@@ -271,12 +271,92 @@ def test_parse_if_stmt():
     } else {
     !name.other = (14 + 20)
     }""")
+
+    p1 = Parser(t1)
+
+    tree = p1.parse_stmt()
+    print(tree)
+
     t2 = Tokenizer("""if ^four.five(): {
     x = 9
     } else {
     x = 10
     }""")
+    p2 = Parser(t2)
+    tree = p2.parse_stmt()
+    print(tree)
 
+    with pytest.raises(SyntaxError):
+        t3 = Tokenizer("""if ^four.five(): {x = 9
+        } else {
+        x = 10
+        }""")
+        p3 = Parser(t3)
+        tree = p3.parse_stmt()
+        print(tree)
+
+    with pytest.raises(SyntaxError):
+        t4 = Tokenizer("""if ^four.five(): {
+        x = 9
+        } else {x = 10
+        }""")
+        p4 = Parser(t4)
+        tree = p4.parse_stmt()
+        print(tree)
+
+def test_parse_if_only_stmt():
+    t1 = Tokenizer("""ifonly c  :{
+    _ = ^z.w()
+    !f.t = (9 * 10)
+    }""")
+
+    p1 = Parser(t1)
+    tree = p1.parse_stmt()
+    print(tree)
+
+    t2 = Tokenizer("""ifonly ^four.five(): {
+    x = 9
+    }""")
+    p2 = Parser(t2)
+    tree = p2.parse_stmt()
+    print(tree)
+
+    with pytest.raises(SyntaxError):
+        t3 = Tokenizer("""ifonly ^four.five(): {x = 9
+        }""")
+        p3 = Parser(t3)
+        tree = p3.parse_stmt()
+        print(tree)
+
+
+def test_while_stmt():
+    t1 = Tokenizer("""while c  :{
+    _ = ^z.w()
+    !f.t = (9 * 10)
+    }""")
+
+    p1 = Parser(t1)
+    tree = p1.parse_stmt()
+    print(tree)
+
+    t2 = Tokenizer("""while ^four.five(): {
+    x = 9
+    }""")
+    p2 = Parser(t2)
+    tree = p2.parse_stmt()
+    print(tree)
+
+    with pytest.raises(SyntaxError):
+        t3 = Tokenizer("""while ^four.five(): {x = 9
+        }""")
+        p3 = Parser(t3)
+        tree = p3.parse_stmt()
+        print(tree)
+
+def test_parse_return_stmt():
+    t1 = Tokenizer("""return 0""")
+    t2 = Tokenizer("""return (4*(7+9))""")
+    
     p1 = Parser(t1)
     p2 = Parser(t2)
 
@@ -285,23 +365,74 @@ def test_parse_if_stmt():
     tree = p2.parse_stmt()
     print(tree)
 
-#TODO include newline formatting
-def test_parse_if_only_stmt():
-    pass
-
-#TODO include newline formatting
-def test_while_stmt():
-    pass
-
-def test_parse_return_stmt():
-    pass
 
 def test_parse_print_stmt():
-    pass
+    t1 = Tokenizer("""print(0)""")
+    t2 = Tokenizer("""print((4*(7+9)))""")
+    
+    p1 = Parser(t1)
+    p2 = Parser(t2)
 
-#TODO include newline formatting
+    tree = p1.parse_stmt()
+    print(tree)
+    tree = p2.parse_stmt()
+    print(tree)
+
 def test_parse_class_declaration():
-    pass
+    t1 = Tokenizer("""class Foo [
+    fields x,y,z
+        method doStuff(s,t,uv) with locals r:
+        if (x < y): {
+            r = ((x + y) + z)
+        } else {
+            r = ((x + y) + z)
+        }
+        print(r)
+        return ((x + y) + z)
+    method pop() with locals tmp:
+        if (&this.list == 0): {
+            return 0
+        } else {
+            tmp = ^this.getVal()
+            !this.list = ^this.getNext()
+            return tmp
+        }
+    ]""")
+    print(t1.tokenize())
+
+    p1 = Parser(t1)
+    tree = p1.parse_cls()
+
+    t2 = Tokenizer("""class Foo [
+    fields
+    ]""")
+    
+    p2 = Parser(t2)
+    tree = p2.parse_cls()
+
+    with pytest.raises(SyntaxError):
+        t3 = Tokenizer("""class Foo [ fields x,y,z
+            method doStuff(s,t,uv) with locals r:
+                if (x < y): {
+                    r = ((x + y) + z)
+                } else {
+                    r = ((x + y) + z)
+                }
+                print(r)
+                return ((x + y) + z)
+            method pop() with locals tmp:
+                if (&this.list == 0): {
+                    return 0
+                } else {
+                    tmp = ^this.getVal()
+                    !this.list = ^this.getNext()
+                    return tmp
+                }
+        ]""")
+
+        p3 = Parser(t3)
+        tree = p3.parse_cls()
+
 
 #TODO include newline formatting
 def test_parse_method_declaration():
