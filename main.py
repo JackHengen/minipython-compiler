@@ -1,16 +1,14 @@
 import argparse
 from enum import Enum
 from abc import ABC
-import time
 from dataclasses import dataclass
+from typing import Union
 # TODO
 # Questions
 # No infinite parsing if the while loops don't terminate (check when we return None from tokenizer and end loop and
 # check for that and provide a correct error message
 # Symantic Analyzer - right now only capitalize classes?
 # Use objgraph for output for parser
-# Maybe have func which takes in a list of tokentypes and processes in order - gives error messages of the type of thing
-# we are parsing and maybe even what line?
 
 class TokenType(Enum):
     LPAREN = 0
@@ -470,8 +468,97 @@ class Parser:
             stmts.append(stmt)
         return Program(cls,locs,stmts)
 
-class Analyzer():
+
+class IRStatement(ABC):
     pass
+
+class IRExpression(ABC):
+    pass
+
+class IRControlTransfer:
+    pass
+
+class IRVar():
+    reg:str
+
+class IRConst():
+    n:int
+
+class IRBlockName():
+    name:str
+
+class IRArray:
+    # Since these are literally supposed to take on values that the same aspects in the blocks will take on they can have the same type, the IRBlockNames will match the block names of blocks etc
+    vals:list[Union[IRBlockName,IRConst]]
+
+class IRBasicBlock:
+    name:IRBlockName
+    statements:list[IRStatement]
+    ctl_trans:IRControlTransfer
+
+NONGLOBALS = Union[IRVar,IRConst]
+GLOBALS = Union[NONGLOBALS,IRArray]
+
+class IRCall(IRExpression):
+    c:IRVar
+    r:IRVar
+    args:list[NONGLOBALS]
+
+class IRPhi(IRExpression):
+    block_names:list[IRBlockName]
+    vars:list[IRVar]
+
+class IRAlloc(IRExpression):
+    n:IRConst
+
+class IROp(IRExpression):
+    l:NONGLOBALS
+    op:str
+    r:NONGLOBALS
+
+class IRGetELT(IRExpression):
+    base:IRVar
+    i:NONGLOBALS
+
+class IRLoad(IRExpression):
+    base:IRVar
+
+class IRStore(IRStatement):
+    base:IRVar
+    i:GLOBALS
+
+class IRSetELT(IRStatement):
+    base:IRVar
+    i:GLOBALS
+    i2:GLOBALS
+
+class IRPrint(IRStatement):
+    v:NONGLOBALS
+
+class IRAssign(IRStatement):
+    v:IRVar
+    right:IRExpression
+
+class IRIf(IRControlTransfer):
+    v:IRVar
+    b_true:IRBlockName
+    b_false:IRBlockName
+
+class IRJump(IRControlTransfer):
+    b:IRBlockName
+
+class IRRet(IRControlTransfer):
+    v:NONGLOBALS
+
+class IRFail(IRControlTransfer):
+    m:str  # For the moment who knows
+
+#TODO flatten math
+# IRArray
+# IRBasicBlock
+# map field names to new name as we go through
+# Peephole optimization
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MiniPython Compiler")
