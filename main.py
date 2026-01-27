@@ -208,21 +208,21 @@ class Expression(ASTNode):
     pass
 
 @dataclass
-class MethodDeclaration(ASTNode):
+class Method(ASTNode):
     method_name:str
     args:list[str]
     local_vars:list[str]
     statements:list[Statement]
 
 @dataclass
-class ClassDeclaration(ASTNode):
+class Class(ASTNode):
     class_name:str
     fields:list[str]
-    methods:list[MethodDeclaration]
+    methods:list[Method]
 
 @dataclass
 class Program(ASTNode):
-    classes:list[ClassDeclaration]
+    classes:list[Class]
     local_vars:list[str]
     statements:list[Statement]
 
@@ -298,35 +298,71 @@ class PrintStatement(Statement):
 class Parser:
     def __init__(self,t:Tokenizer):
         self.t = t
+        self.line_number = 1
+
+    def get_next(self):
+        if self.t.peek() is None:
+            raise SyntaxError("Expected a token but got end of file")
+        tok = self.t.get_next()
+        if tok.type == TokenType.NEWLINE:
+            self.line_number += 1
+        return tok
+
+    def parse(self,*typeset):
+        ret = []
+        for t in typeset:
+            if t is Expression:
+                expr = self.parse_expr()
+                ret.append(expr)
+            elif t is Statement:
+                stmt = self.parse_stmt()
+                ret.append(stmt)
+            elif t is Method:
+                mth = self.parse_mthd()
+                ret.append(mth)
+            elif t is Class:
+                cls = self.parse_cls()
+                ret.append(cls)
+            else:
+                tok = self.get_next()
+                if type(t) is list:
+                    if tok.type not in t:
+                        self.parse_error(f"Expected a token of types: {t}, instead got {tok.lexeme} of type {tok.type}")
+                else:
+                    if tok.type != t:
+                        self.parse_error(f"Expected a token of type: {t}, instead got {tok.lexeme} of type {tok.type}")
+                ret.append(tok)
+        return ret
+
+    def parse_until(self, until, *typeset, grab_trail = True):
+        ret = []
+        for _ in range(len(typeset)):
+            ret.append([])
+        stop = (lambda: self.t.peek().type in until) if type(until) is list else (lambda: self.t.peek().type == until)
+        while not stop():
+            parsed = self.parse(*typeset)
+            for i in range(len(typeset)):
+                ret[i].append(parsed[i])
+            
+        if grab_trail:
+            self.parse(until)
+        return ret
+
+    def parse_error(self,explaination):
+        raise SyntaxError(f"Syntax Error on line: {self.line_number}\n{explaination}")
 
     def parse_expr(self) -> Expression:
         tok = self.t.get_next()
         match tok.type:
             case TokenType.LPAREN:
-                left = self.parse_expr()
-                op = self.t.get_next()
-                if op.type not in OPERATORS:
-                    raise SyntaxError("Invalid operator on parenthesized expression")
-                right = self.parse_expr()
-                rparen = self.t.get_next()
-                if rparen.type != TokenType.RPAREN:
-                    raise SyntaxError("No closing parenthesis on parenthesized expression")
+                left, op, right, _ = self.parse(Expression,OPERATORS,Expression,TokenType.RPAREN)
                 return ParenExpression(left,op,right)
             case TokenType.IDENTIFIER:
                 return VarExpression(tok)
             case TokenType.NUMBER:
                 return NumExpression(tok)
             case TokenType.CARET:
-                e = self.parse_expr()
-                dot = self.t.get_next()
-                if dot.type != TokenType.DOT:
-                    raise SyntaxError("No dot used when accessing method")
-                method_name = self.t.get_next()
-                if method_name.type not in [TokenType.IDENTIFIER,TokenType.THIS]:
-                    raise SyntaxError("Method name is not an identifier")
-                lparen = self.t.get_next()
-                if lparen.type != TokenType.LPAREN:
-                    raise SyntaxError("Invalid argument structure to method")
+                e, _, method_name, _ = self.parse(Expression,TokenType.DOT,[TokenType.IDENTIFIER,TokenType.THIS],TokenType.LPAREN)
                 args = []
                 t = self.t.peek()
                 if t.type != TokenType.RPAREN:
@@ -341,107 +377,45 @@ class Parser:
 
                 return MethodExpression(e,method_name,args)
             case TokenType.AMP:
-                e = self.parse_expr()
-                dot = self.t.get_next()
-                if dot.type != TokenType.DOT:
-                    raise SyntaxError("No dot used when accessing field")
-                field_name = self.t.get_next()
-                if field_name.type != TokenType.IDENTIFIER:
-                    raise SyntaxError("Field name is not an identifier")
+                e, _, field_name = self.parse(Expression,TokenType.DOT,TokenType.IDENTIFIER)
                 return FieldReadExpression(e,field_name)
             case TokenType.AT:
-                cl = self.t.get_next()
-                if cl.type != TokenType.IDENTIFIER:
-                    raise SyntaxError("Class instantiation doesn't refer to a valid identifier")
+                cl = self.parse(TokenType.IDENTIFIER)
                 return NewObjExpression(cl)
             case TokenType.THIS:
                 return ThisExpression()
         raise SyntaxError(f"{tok.type}: {tok.lexeme} cannot start an expression")
     
     def parse_stmt(self):
-        def parse_conditional_block(block_type:str):
-            expr = self.parse_expr()
-            colon = self.t.get_next()
-            if colon.type != TokenType.COLON:
-                raise SyntaxError(f"No colon seperator between conditional and statements to execute in {block_type} statement")
-            lbrac = self.t.get_next()
-            if lbrac.type != TokenType.LCBRAC:
-                raise SyntaxError("No curly bracket to open statments after conditional in {block_type} statement")
-            nl = self.t.get_next()
-            if nl.type != TokenType.NEWLINE:
-                raise SyntaxError(f"No newline seperating expressions and statements for {block_type} statement")
-            stmts = [self.parse_stmt()] # each block needs at least one statement in it
-            nl = self.t.get_next()
-            if nl.type != TokenType.NEWLINE:
-                raise SyntaxError(f"No newline seperating statements for {block_type} statement")
-            while self.t.peek().type != TokenType.RCBRAC:
-                stmt = self.parse_stmt()
-                stmts.append(stmt)
-                nl = self.t.get_next()
-                if nl.type != TokenType.NEWLINE:
-                    raise SyntaxError(f"No newline seperating statements for {block_type} statement")
-            self.t.get_next()
-            return expr,stmts
+        def parse_conditional_block():
+            expr, _, _, _, s, _ = self.parse(Expression,TokenType.COLON,TokenType.LCBRAC,TokenType.NEWLINE, Statement, TokenType.NEWLINE)
+            ss, _ = self.parse_until(TokenType.RCBRAC,Statement,TokenType.NEWLINE)
+            return expr,[s,*ss]
 
         tok = self.t.get_next()
         match tok.type:
             case TokenType.IDENTIFIER | TokenType.UNDER:
-                eq = self.t.get_next()
-                if eq.type != TokenType.EQUAL:
-                    raise SyntaxError("Variable assignment missing equal sign")
-                expr = self.parse_expr()
+                _, expr = self.parse(TokenType.EQUAL,Expression)
                 return AssignVarStatement(tok,expr)
             case TokenType.EXCLAM:
-                cls = self.t.get_next()
-                if cls.type not in  [TokenType.IDENTIFIER,TokenType.THIS]:
-                    raise SyntaxError("Field assignment doesn't refer to valid object identifier")
-                dot = self.t.get_next()
-                if dot.type != TokenType.DOT:
-                    raise SyntaxError("No dot used when referring to field to assign value to")
-                field_name = self.t.get_next()
-                if field_name.type != TokenType.IDENTIFIER:
-                    raise SyntaxError("Field assignment doesn't refer to valid field name identifier")
-                eq = self.t.get_next()
-                if eq.type != TokenType.EQUAL:
-                    raise SyntaxError("Field assignment missing equal sign")
-                expr = self.parse_expr()
+                cls, _, field_name, _, expr = self.parse([TokenType.IDENTIFIER,TokenType.THIS],TokenType.DOT,TokenType.IDENTIFIER,TokenType.EQUAL,Expression)
                 return AssignFieldStatement(cls,field_name,expr)
             case TokenType.IF:
-                expr, stmts_if = parse_conditional_block("if")
-                kw_else = self.t.get_next()
-                if kw_else.type != TokenType.ELSE:
-                    raise SyntaxError("No else clause in if statement (must use ifonly if this was intended)")
-                lbrac = self.t.get_next()
-                if lbrac.type != TokenType.LCBRAC:
-                    raise SyntaxError("No curly bracket to open statments after else in if statement")
-                nl = self.t.get_next()
-                if nl.type != TokenType.NEWLINE:
-                    raise SyntaxError("No newline seperating opening of else block and statements within the else block")
-                stmts_else = []
-                while self.t.peek().type != TokenType.RCBRAC:
-                    stmts_else.append(self.parse_stmt())
-                    nl = self.t.get_next()
-                    if nl.type != TokenType.NEWLINE:
-                        raise SyntaxError("No newline seperating statements within the else block")
-                self.t.get_next()
-                return IfStatement(expr,stmts_if,stmts_else)
+                expr, stmts_if = parse_conditional_block()
+                _,_,_,s,_ = self.parse(TokenType.ELSE,TokenType.LCBRAC,TokenType.NEWLINE,Statement,TokenType.NEWLINE)
+                ss, _ = self.parse_until(TokenType.RCBRAC,Statement,TokenType.NEWLINE)
+                return IfStatement(expr,stmts_if,[s,*ss])
             case TokenType.IFONLY:
-                return IfOnlyStatement(*parse_conditional_block("ifonly"))
+                return IfOnlyStatement(*parse_conditional_block())
             case TokenType.WHILE:
-                return WhileStatement(*parse_conditional_block("while"))
+                return WhileStatement(*parse_conditional_block())
             case TokenType.RETURN:
                 expr = self.parse_expr()
                 return ReturnStatement(expr)
             case TokenType.PRINT:
-                lbrac = self.t.get_next()
-                if lbrac.type != TokenType.LPAREN:
-                    raise SyntaxError("No left parenthesis for print statement arguments")
-                expr = self.parse_expr()
-                rbrac = self.t.get_next()
-                if rbrac.type != TokenType.RPAREN:
-                    raise SyntaxError("No right parenthesis for print statement arguments")
+                _, expr, _ = self.parse(TokenType.LPAREN,Expression,TokenType.RPAREN)
                 return PrintStatement(expr)
-        raise Exception("how did we get here")
+        raise Exception(f"how did we get here: {tok}")
 
     def parse_identifier_list(self):
         identifiers = []
@@ -457,108 +431,43 @@ class Parser:
 
 
     def parse_cls(self):
-        cls = self.t.get_next()
-        if cls.type != TokenType.CLASS:
-            raise SyntaxError(f"{cls.type}: {cls.lexeme} cannot start a class definition")
-        ident = self.t.get_next()
-        if ident.type != TokenType.IDENTIFIER:
-            raise SyntaxError("class definition needs identifier")
-        lbrac = self.t.get_next()
-        if lbrac.type != TokenType.LSBRAC:
-            raise SyntaxError("no opening bracket for class definition")
-        nl = self.t.get_next()
-        if nl.type != TokenType.NEWLINE:
-            raise SyntaxError("no newline between opening of class definition block and fields")
-        fields = self.t.get_next()
-        if fields.type !=TokenType.FIELDS:
-            raise SyntaxError("no fields definition for class (if no fields exist it still must be empty")
+        cls, ident, _, _, _ = self.parse(TokenType.CLASS,TokenType.IDENTIFIER,TokenType.LSBRAC,TokenType.NEWLINE,TokenType.FIELDS)
         field_names = self.parse_identifier_list()
-        nl = self.t.get_next()
-        if nl.type != TokenType.NEWLINE:
-            raise SyntaxError("no newline between fields and class methods")
-        mths = []
-        while self.t.peek().type != TokenType.RSBRAC:
-            mths.append(self.parse_mthd())
-        self.t.get_next()
-        return ClassDeclaration(ident,field_names,mths)
+        self.parse(TokenType.NEWLINE)
+        mths = self.parse_until(TokenType.RSBRAC,Method)
+        return Class(ident,field_names,mths)
 
 
     def parse_mthd(self):
-        mth = self.t.get_next()
-        if mth.type != TokenType.METHOD:
-            raise SyntaxError(f"{mth.type}: {mth.lexeme} cannot start a method definition")
-        ident = self.t.get_next()
-        if ident.type != TokenType.IDENTIFIER:
-            raise SyntaxError("method definition needs an identifier")
-        lparen = self.t.get_next()
-        if lparen.type != TokenType.LPAREN:
-            raise SyntaxError("no opening parenthesis for method arguments")
+        print(self.t.peek())
+        mth, ident, _ = self.parse(TokenType.METHOD,TokenType.IDENTIFIER,TokenType.LPAREN)
         arg_names = self.parse_identifier_list()
-        rparen = self.t.get_next()
-        if rparen.type != TokenType.RPAREN:
-            raise SyntaxError("no closing parenthesis for method arguments")
-        w = self.t.get_next()
-        l = self.t.get_next()
-        if w.type != TokenType.WITH or l.type !=TokenType.LOCALS:
-            raise SyntaxError("no with locals statement in method declaration")
+        _, _, _ = self.parse(TokenType.RPAREN,TokenType.WITH,TokenType.LOCALS)
         local_names = self.parse_identifier_list()
-        colon = self.t.get_next()
-        if colon.type != TokenType.COLON:
-            raise SyntaxError("no colon seperating method signature and statments")
-        nl = self.t.get_next()
-        if nl is not None:
-            if nl.type != TokenType.NEWLINE:
-                raise SyntaxError("No newline between method signature and statements")
-            stmts = []
-            stmts.append(self.parse_stmt())
-            nl = self.t.get_next()
-            if nl.type != TokenType.NEWLINE:
-                raise SyntaxError("no newline between statements within method")
-            while self.t.peek().type not in [TokenType.METHOD, TokenType.RSBRAC]:
-                stmts.append(self.parse_stmt())
-                nl = self.t.get_next()
-                if nl.type != TokenType.NEWLINE:
-                    raise SyntaxError("no newline between statements within method")
+        _, _, s, _ = self.parse(TokenType.COLON,TokenType.NEWLINE,Statement,TokenType.NEWLINE)
+        ss, _ = self.parse_until([TokenType.METHOD,TokenType.RSBRAC],Statement,TokenType.NEWLINE,grab_trail=False)
 
-        return MethodDeclaration(ident,arg_names,local_names,stmts)
-
-    def grab_nls(self):
-        while(self.t.peek().type == TokenType.NEWLINE):
-            self.t.get_next()
+        return Method(ident,arg_names,local_names,[s,*ss])
 
     def parse_program(self):
         cls = []
-        while self.t.peek() is not None and self.t.peek().type == TokenType.CLASS:
-            cls.append(self.parse_cls())
+        if self.t.peek().type != TokenType.MAIN:
+            cls, _ = self.parse_until(TokenType.NEWLINE,Class,TokenType.NEWLINE)
+        _, _ = self.parse(TokenType.MAIN,TokenType.WITH)
+        locs = self.parse_identifier_list()
+        _ = self.parse(TokenType.COLON)
+
+        stmts=[]
+        while self.t.peek() is not None:
             nl = self.t.get_next()
             if nl.type != TokenType.NEWLINE:
-                SyntaxError("No newline after class definition either next class definition or program entry point (main)")
-        self.grab_nls()
+                self.parse_error("No newlines between statements in program entry point (main)")
+            if self.t.peek() is None:
+                break
 
-        main = self.t.get_next()
-        if main.type != TokenType.MAIN:
-            raise SyntaxError(f"Expected program entry after class defintions, instead got {main.type}: {main.lexeme}")
-
-        w = self.t.get_next()
-        if w.type != TokenType.WITH:
-            raise SyntaxError("Exected program entry to have 'with' keyword")
-        locs = self.parse_identifier_list()
-        c = self.t.get_next()
-        if c.type != TokenType.COLON:
-            raise SyntaxError("Expected colon after locals definition for program entry point (main)")
-        nl = self.t.get_next()
-        stmts = []
-        if nl is not None:
-            if nl.type != TokenType.NEWLINE:
-                raise SyntaxError("No newlines between statements in program entry point (main)")
-            while self.t.peek() is not None:
-                stmt = self.parse_stmt()
-                stmts.append(stmt)
-                nl = self.t.get_next()
-                if nl is None:
-                    break
-                if nl.type != TokenType.NEWLINE:
-                    raise SyntaxError("No newlines between statements in program entry point (main)")
+            print("a")
+            stmt = self.parse_stmt()
+            stmts.append(stmt)
         return Program(cls,locs,stmts)
 
 class Analyzer():

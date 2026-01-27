@@ -126,6 +126,7 @@ nothing = """class Foo [
         print(r)
         return ((x + y) + z)
 ]
+
 main with:"""
 
 # This code basically plays to the best-case scenario for global value numbering
@@ -144,11 +145,9 @@ def test_tokenize_peek():
     tok2 = t.peek()
     assert tok.type == tok2.type
     assert tok.lexeme == tok2.lexeme
-    print(tok,tok2)
 
 def test_tokenize():
     t = Tokenizer(first_example)
-    print(t.tokenize())
 
 
 def test_tokenize_cache():
@@ -164,7 +163,6 @@ def test_tokenize_cache():
     end_time = time.perf_counter()
     time2 = end_time - start_time
 
-    print(f"time1: {time1}, time2: {time2}")
     assert time1 > time2
 
 
@@ -178,11 +176,8 @@ def test_parse_paren_expr():
     p3 = Parser(t3)
 
     tree = p1.parse_expr()
-    print(tree,end="\n\n")
     tree = p2.parse_expr()
-    print(tree,end="\n\n")
     tree = p3.parse_expr()
-    print(tree,end="\n\n")
     
 def test_parse_method_expr():
     t1 = Tokenizer("^3.methodname()")
@@ -194,11 +189,8 @@ def test_parse_method_expr():
     p3 = Parser(t3)
 
     tree = p1.parse_expr()
-    print(tree,end="\n\n")
     tree = p2.parse_expr()
-    print(tree,end="\n\n")
     tree = p3.parse_expr()
-    print(tree,end="\n\n")
 
 def test_parse_field_read_expr():
     t1 = Tokenizer("&e.a")
@@ -210,11 +202,8 @@ def test_parse_field_read_expr():
     p3 = Parser(t3)
 
     tree = p1.parse_expr()
-    print(tree,end="\n\n")
     tree = p2.parse_expr()
-    print(tree,end="\n\n")
     tree = p3.parse_expr()
-    print(tree,end="\n\n")
     
 
 def test_parse_class_instantiation_expr():
@@ -225,13 +214,10 @@ def test_parse_class_instantiation_expr():
     p2 = Parser(t2)
 
     tree = p1.parse_expr()
-    print(tree,end="\n\n")
     tree = p2.parse_expr()
-    print(tree,end="\n\n")
 
 def test_parse_this_expr():
     tree = Parser(Tokenizer("this")).parse_expr()
-    print(tree,end="\n\n")
 
 def test_parse_assignment_stmt():
     t1 = Tokenizer("x = 3")
@@ -243,11 +229,8 @@ def test_parse_assignment_stmt():
     p3 = Parser(t3)
 
     tree = p1.parse_stmt()
-    print(tree,end="\n\n")
     tree = p2.parse_stmt()
-    print(tree,end="\n\n")
     tree = p3.parse_stmt()
-    print(tree,end="\n\n")
 
 def test_parse_field_update_stmt():
     t1 = Tokenizer("!x.y = 3")
@@ -260,9 +243,7 @@ def test_parse_field_update_stmt():
     p3 = Parser(t3)
 
     tree = p1.parse_stmt()
-    print(tree,end="\n\n")
     tree = p3.parse_stmt()
-    print(tree,end="\n\n")
 
 def test_parse_if_stmt():
     t1 = Tokenizer("""if hi:{
@@ -275,7 +256,7 @@ def test_parse_if_stmt():
     p1 = Parser(t1)
 
     tree = p1.parse_stmt()
-    print(tree,end="\n\n")
+    print(tree)
 
     t2 = Tokenizer("""if ^four.five(): {
     x = 9
@@ -284,7 +265,7 @@ def test_parse_if_stmt():
     }""")
     p2 = Parser(t2)
     tree = p2.parse_stmt()
-    print(tree,end="\n\n")
+    print(tree)
 
     with pytest.raises(SyntaxError):
         t3 = Tokenizer("""if ^four.five(): {x = 9
@@ -293,7 +274,6 @@ def test_parse_if_stmt():
         }""")
         p3 = Parser(t3)
         tree = p3.parse_stmt()
-        print(tree,end="\n\n")
 
     with pytest.raises(SyntaxError):
         t4 = Tokenizer("""if ^four.five(): {
@@ -302,7 +282,6 @@ def test_parse_if_stmt():
         }""")
         p4 = Parser(t4)
         tree = p4.parse_stmt()
-        print(tree,end="\n\n")
 
 def test_parse_if_only_stmt():
     t1 = Tokenizer("""ifonly c  :{
@@ -312,21 +291,18 @@ def test_parse_if_only_stmt():
 
     p1 = Parser(t1)
     tree = p1.parse_stmt()
-    print(tree,end="\n\n")
 
     t2 = Tokenizer("""ifonly ^four.five(): {
     x = 9
     }""")
     p2 = Parser(t2)
     tree = p2.parse_stmt()
-    print(tree,end="\n\n")
 
     with pytest.raises(SyntaxError):
         t3 = Tokenizer("""ifonly ^four.five(): {x = 9
         }""")
         p3 = Parser(t3)
         tree = p3.parse_stmt()
-        print(tree,end="\n\n")
 
 
 def test_while_stmt():
@@ -337,21 +313,18 @@ def test_while_stmt():
 
     p1 = Parser(t1)
     tree = p1.parse_stmt()
-    print(tree,end="\n\n")
 
     t2 = Tokenizer("""while ^four.five(): {
     x = 9
     }""")
     p2 = Parser(t2)
     tree = p2.parse_stmt()
-    print(tree,end="\n\n")
 
     with pytest.raises(SyntaxError):
         t3 = Tokenizer("""while ^four.five(): {x = 9
         }""")
         p3 = Parser(t3)
         tree = p3.parse_stmt()
-        print(tree,end="\n\n")
 
 def test_parse_return_stmt():
     t1 = Tokenizer("""return 0""")
@@ -361,9 +334,7 @@ def test_parse_return_stmt():
     p2 = Parser(t2)
 
     tree = p1.parse_stmt()
-    print(tree,end="\n\n")
     tree = p2.parse_stmt()
-    print(tree,end="\n\n")
 
 
 def test_parse_print_stmt():
@@ -374,9 +345,7 @@ def test_parse_print_stmt():
     p2 = Parser(t2)
 
     tree = p1.parse_stmt()
-    print(tree,end="\n\n")
     tree = p2.parse_stmt()
-    print(tree,end="\n\n")
 
 def test_parse_method_declaration():
     t1 = Tokenizer("""method doStuff(s,t,uv) with locals r:
@@ -390,7 +359,6 @@ def test_parse_method_declaration():
         method""")
     p1 = Parser(t1)
     tree = p1.parse_mthd()
-    print(tree,end="\n\n")
 
     t2 = Tokenizer("""method pop() with locals tmp:
         if (&this.list == 0): {
@@ -403,7 +371,6 @@ def test_parse_method_declaration():
         ]""")
     p2 = Parser(t2)
     tree = p2.parse_mthd()
-    print(tree,end="\n\n")
 
     with pytest.raises(SyntaxError):
         t3 = Tokenizer("""    method pop() with locals tmp: if (&this.list == 0): {
@@ -416,7 +383,6 @@ def test_parse_method_declaration():
         ]""")
         p3 = Parser(t3)
         tree = p3.parse_mthd()
-        print(tree,end="\n\n")
 
 
 def test_parse_class_declaration():
@@ -439,7 +405,7 @@ def test_parse_class_declaration():
             return tmp
         }
     ]""")
-    print(t1.tokenize())
+    t1.tokenize()
 
     p1 = Parser(t1)
     tree = p1.parse_cls()
@@ -477,5 +443,5 @@ def test_parse_class_declaration():
 
 def test_parse_program_declaration():
     for prg in [nothing,optimal,first_example,simple_stack,complex_stack]:
-        print(f"parsing prg: {prg}")
-        print(Parser(Tokenizer(prg)).parse_program())
+        print(prg)
+        Parser(Tokenizer(prg)).parse_program()
