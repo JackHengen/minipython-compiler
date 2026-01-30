@@ -1,4 +1,4 @@
-from main import Tokenizer, Parser
+from main import *
 import time
 import pytest
 
@@ -256,7 +256,6 @@ def test_parse_if_stmt():
     p1 = Parser(t1)
 
     tree = p1.parse_stmt()
-    print(tree)
 
     t2 = Tokenizer("""if ^four.five(): {
     x = 9
@@ -265,7 +264,6 @@ def test_parse_if_stmt():
     }""")
     p2 = Parser(t2)
     tree = p2.parse_stmt()
-    print(tree)
 
     with pytest.raises(SyntaxError):
         t3 = Tokenizer("""if ^four.five(): {x = 9
@@ -443,5 +441,16 @@ def test_parse_class_declaration():
 
 def test_parse_program_declaration():
     for prg in [nothing,optimal,first_example,simple_stack,complex_stack]:
-        print(prg)
         Parser(Tokenizer(prg)).parse_program()
+
+def test_cfg_of_paren_exprs_and_assign():
+    snippet = """x = (5 / (3+4))"""
+    t1 = Tokenizer(snippet)
+    p1 = Parser(t1)
+    ast = p1.parse_stmt()
+    print(ast)
+    prog = IRProgram([],[],{})
+    prog.add_block("dookie")
+    ast.to_ir(prog)
+    print(prog.curr_block.statements)
+

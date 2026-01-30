@@ -1,7 +1,7 @@
 import argparse
 from enum import Enum
-from abc import ABC
-from dataclasses import dataclass
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Union
 # TODO
 # Questions
@@ -195,9 +195,141 @@ class Tokenizer:
         self.pos = 0
         return self.toks
 
-class ASTNode(ABC):
+class IRStatement(ABC):
     pass
 
+class IRExpression(ABC):
+    pass
+
+class IRControlTransfer(ABC):
+    pass
+
+@dataclass
+class IRVar(IRExpression):
+    reg:str
+
+
+@dataclass
+class IRConst(IRExpression):
+    n:int
+
+@dataclass
+class IRArray:
+    # Since these are literally supposed to take on values that the same aspects in the blocks will take on they can have the same type, the IRBlockNames will match the block names of blocks etc
+    vals:list[Union[str,IRConst]]
+    name:str
+
+@dataclass
+class IRBasicBlock:
+    name:str
+    statements:list[IRStatement]
+    ctl_trans:IRControlTransfer
+
+    def add_statement(self,stmt:IRStatement):
+        self.statements.append(stmt)
+
+    def add_ctl_trans(self,trans:IRControlTransfer):
+        self.ctl_trans=trans
+
+NONGLOBALS = Union[IRVar,IRConst]
+GLOBALS = Union[NONGLOBALS,IRArray]
+
+@dataclass
+class IROperation(IRExpression):
+    l:NONGLOBALS
+    op:str
+    r:NONGLOBALS
+
+@dataclass
+class IRCall(IRExpression):
+    c:IRVar
+    r:IRVar
+    args:list[NONGLOBALS]
+
+@dataclass
+class IRPhi(IRExpression):
+    block_names:list[str]
+    vars:list[IRVar]
+
+@dataclass
+class IRAlloc(IRExpression):
+    n:IRConst
+
+@dataclass
+class IROp(IRExpression):
+    l:NONGLOBALS
+    op:str
+    r:NONGLOBALS
+
+@dataclass
+class IRGetELT(IRExpression):
+    base:IRVar
+    i:NONGLOBALS
+
+@dataclass
+class IRLoad(IRExpression):
+    base:IRVar
+
+@dataclass
+class IRStore(IRStatement):
+    base:IRVar
+    i:GLOBALS
+
+@dataclass
+class IRSetELT(IRStatement):
+    base:IRVar
+    i:GLOBALS
+    i2:GLOBALS
+
+@dataclass
+class IRPrint(IRStatement):
+    v:NONGLOBALS
+
+@dataclass
+class IRAssign(IRStatement):
+    v:IRVar
+    val:IRExpression
+
+@dataclass
+class IRIf(IRControlTransfer):
+    v:IRVar
+    b_true:str
+    b_false:str
+
+@dataclass
+class IRJump(IRControlTransfer):
+    b:str
+
+@dataclass
+class IRRet(IRControlTransfer):
+    v:NONGLOBALS
+
+@dataclass
+class IRFail(IRControlTransfer):
+    m:str  # For the moment who knows
+
+@dataclass
+class IRProgram:
+    vtbls: list[IRArray]
+    field_maps: list[IRArray]
+    field_name_to_map_index: dict[str, int]
+    blocks: list[IRBasicBlock] = field(default_factory=list)
+    curr_block:IRBasicBlock = None
+
+    def add_block(self,block_name):
+        self.curr_block = IRBasicBlock(block_name,[],[])
+        self.blocks.append(self.curr_block)
+        return self.curr_block
+
+    def get_block(self,block_name):
+        return self.curr_block
+
+    def add_stmt(self,stmt:IRStatement):
+        self.curr_block.add_statement(stmt)
+
+class ASTNode(ABC):
+    # to_ir()
+    pass
 
 class Statement(ASTNode):
     pass
@@ -212,85 +344,201 @@ class Method(ASTNode):
     local_vars:list[str]
     statements:list[Statement]
 
+    def to_ir(prog:IRProgram):
+        for s in statements:
+            s.to_ir(IRProgram)
+
+
 @dataclass
 class Class(ASTNode):
     class_name:str
     fields:list[str]
     methods:list[Method]
 
+    def to_ir(self,prog:IRProgram):
+        for m in self.methods:
+            prog.add_block(self.class_name,m.method_name)
+            m.to_ir()
+
+
+
 @dataclass
 class Program(ASTNode):
     classes:list[Class]
     local_vars:list[str]
     statements:list[Statement]
+    
+    def to_ir_program(self):
+        field_map = {}
+        counter = 0
+        for c in self.classes:
+            for field in c.fields:
+                if field not in field_map:
+                    field_map[field] = counter
+                    counter += 1
+
+        vtbls = []
+        class_field_maps = []
+        for c in self.classes:
+
+            counter = 2 # first field offset
+            class_map = []
+            for i in range(len(field_map)):
+                class_map.append(0)
+
+            for field in c.fields:
+                class_map[field_map[field]] = counter
+                counter += 1
+            class_field_maps.append(IRArray(class_map))
+
+            vtbl = []
+            for m in c.methods:
+                vtbl.append(c.class_name + mthd.method_name)
+            vtbls.append(IRArray(vtbl))
+
+        prog = IRProgram(vtbls,class_field_maps,field_map)
+        return self.to_ir(prog)
+
+    def to_ir(prog:IRProgram):
+        for c in self.classes:
+            c.to_ir(prog)
+
+        
+        prog.add_block("main")
+        for stmt in stmts:
+            stmt.to_ir(prog)
+
+        return prog
 
 @dataclass
 class NumExpression(Expression):
     num:int
+    def to_ir(self,counter):
+        return [],IRConst(self.num),counter
+
 
 @dataclass
 class VarExpression(Expression):
     var_name:str
+    def to_ir(self,counter):
+        return [],IRVar(self.var_name),counter
+    
+
+def is_flat(Expression):
+    return isinstance(Expression, (NumExpression,VarExpression))
 
 @dataclass
 class ParenExpression(Expression):
     left:Expression
     op:str
     right:Expression
+    def to_ir(self,counter):
+        print("nested")
+        stmts=[]
+        if not is_flat(self.left):
+            s,expr,counter = self.left.to_ir(counter)
+            stmts.extend(s)
+            tmp = f"tmp{counter}"
+            counter+=1
+            s = IRAssign(IRVar(tmp),expr)
+            stmts.append(s)
+            left = IRVar(tmp)
+        else:
+            _, left, _=self.left.to_ir(counter)
+
+        if not is_flat(self.right):
+            s,expr,counter = self.right.to_ir(counter)
+            stmts.extend(s)
+            tmp = f"tmp{counter}"
+            counter+=1
+            s = IRAssign(tmp,expr)
+            stmts.append(s)
+            right = IRVar(tmp)
+        else:
+            _, right, _ = self.right.to_ir(counter)
+        ret= stmts,IROperation(left,self.op,right), counter
+        print(ret)
+        return ret
 
 @dataclass
 class MethodExpression(Expression):
     expr:Expression
     method_name:str
     args:list[str]
+    def to_ir():
+        pass
 
 @dataclass
 class FieldReadExpression(Expression):
     expr:Expression
     field_name:str
+    def to_ir():
+        pass
 
 @dataclass
 class NewObjExpression(Expression):
     class_name:str
+    def to_ir():
+        pass
 
 @dataclass
 class ThisExpression(Expression):
-    pass
+    def to_ir():
+        pass
 
 @dataclass
 class AssignVarStatement(Statement):
     var_name:str
     val:Expression
+    def to_ir(self,prog:IRProgram):
+        stmts, expr, _ = self.val.to_ir(0)
+        for stmt in stmts:
+            prog.add_stmt(stmt)
+        s = IRAssign(self.var_name,expr)
+        prog.add_stmt(s)
+
 
 @dataclass
 class AssignFieldStatement(Statement):
     class_name:str
     field_name:str
     val:Expression
+    def to_ir():
+        pass
 
 @dataclass
 class IfStatement(Statement):
     condition:Expression
     statements_true:list[Statement]
     statements_false:list[Statement]
+    def to_ir():
+        pass
 
 @dataclass
 class IfOnlyStatement(Statement):
     condition:Expression
     statements:list[Statement]
+    def to_ir():
+        pass
 
 @dataclass
 class WhileStatement(Statement):
     condition:Expression
     statements:list[Statement]
+    def to_ir():
+        pass
 
 @dataclass
 class ReturnStatement(Statement):
     val:Expression
+    def to_ir():
+        pass
 
 @dataclass
 class PrintStatement(Statement):
     val:Expression
+    def to_ir():
+        pass
 
 
 class Parser:
@@ -329,7 +577,7 @@ class Parser:
                 else:
                     if tok.type != t:
                         self.parse_error(f"Expected a token of type: {t}, instead got {tok.lexeme} of type {tok.type}")
-                ret.append(tok)
+                ret.append(tok.lexeme)
         return ret
 
     def parse_until(self, until, *typeset, grab_trail = True):
@@ -356,9 +604,9 @@ class Parser:
                 left, op, right, _ = self.parse(Expression,OPERATORS,Expression,TokenType.RPAREN)
                 return ParenExpression(left,op,right)
             case TokenType.IDENTIFIER:
-                return VarExpression(tok)
+                return VarExpression(tok.lexeme)
             case TokenType.NUMBER:
-                return NumExpression(tok)
+                return NumExpression(tok.lexeme)
             case TokenType.CARET:
                 e, _, method_name, _ = self.parse(Expression,TokenType.DOT,[TokenType.IDENTIFIER,TokenType.THIS],TokenType.LPAREN)
                 args = []
@@ -378,7 +626,7 @@ class Parser:
                 e, _, field_name = self.parse(Expression,TokenType.DOT,TokenType.IDENTIFIER)
                 return FieldReadExpression(e,field_name)
             case TokenType.AT:
-                cl = self.parse(TokenType.IDENTIFIER)
+                cl = self.parse(TokenType.IDENTIFIER)[0]
                 return NewObjExpression(cl)
             case TokenType.THIS:
                 return ThisExpression()
@@ -394,7 +642,7 @@ class Parser:
         match tok.type:
             case TokenType.IDENTIFIER | TokenType.UNDER:
                 _, expr = self.parse(TokenType.EQUAL,Expression)
-                return AssignVarStatement(tok,expr)
+                return AssignVarStatement(tok.lexeme,expr)
             case TokenType.EXCLAM:
                 cls, _, field_name, _, expr = self.parse([TokenType.IDENTIFIER,TokenType.THIS],TokenType.DOT,TokenType.IDENTIFIER,TokenType.EQUAL,Expression)
                 return AssignFieldStatement(cls,field_name,expr)
@@ -424,12 +672,12 @@ class Parser:
                 name = self.t.get_next()
                 if name.type != TokenType.IDENTIFIER:
                     raise SyntaxError("identifier list isn't formatted correctly")
-                identifiers.append(name)
+                identifiers.append(name.lexeme)
         return identifiers
 
 
     def parse_cls(self):
-        cls, ident, _, _, _ = self.parse(TokenType.CLASS,TokenType.IDENTIFIER,TokenType.LSBRAC,TokenType.NEWLINE,TokenType.FIELDS)
+        _, ident, _, _, _ = self.parse(TokenType.CLASS,TokenType.IDENTIFIER,TokenType.LSBRAC,TokenType.NEWLINE,TokenType.FIELDS)
         field_names = self.parse_identifier_list()
         self.parse(TokenType.NEWLINE)
         mths = self.parse_until(TokenType.RSBRAC,Method)
@@ -437,7 +685,6 @@ class Parser:
 
 
     def parse_mthd(self):
-        print(self.t.peek())
         mth, ident, _ = self.parse(TokenType.METHOD,TokenType.IDENTIFIER,TokenType.LPAREN)
         arg_names = self.parse_identifier_list()
         _, _, _ = self.parse(TokenType.RPAREN,TokenType.WITH,TokenType.LOCALS)
@@ -463,99 +710,15 @@ class Parser:
             if self.t.peek() is None:
                 break
 
-            print("a")
             stmt = self.parse_stmt()
             stmts.append(stmt)
         return Program(cls,locs,stmts)
 
 
-class IRStatement(ABC):
-    pass
-
-class IRExpression(ABC):
-    pass
-
-class IRControlTransfer:
-    pass
-
-class IRVar():
-    reg:str
-
-class IRConst():
-    n:int
-
-class IRBlockName():
-    name:str
-
-class IRArray:
-    # Since these are literally supposed to take on values that the same aspects in the blocks will take on they can have the same type, the IRBlockNames will match the block names of blocks etc
-    vals:list[Union[IRBlockName,IRConst]]
-
-class IRBasicBlock:
-    name:IRBlockName
-    statements:list[IRStatement]
-    ctl_trans:IRControlTransfer
-
-NONGLOBALS = Union[IRVar,IRConst]
-GLOBALS = Union[NONGLOBALS,IRArray]
-
-class IRCall(IRExpression):
-    c:IRVar
-    r:IRVar
-    args:list[NONGLOBALS]
-
-class IRPhi(IRExpression):
-    block_names:list[IRBlockName]
-    vars:list[IRVar]
-
-class IRAlloc(IRExpression):
-    n:IRConst
-
-class IROp(IRExpression):
-    l:NONGLOBALS
-    op:str
-    r:NONGLOBALS
-
-class IRGetELT(IRExpression):
-    base:IRVar
-    i:NONGLOBALS
-
-class IRLoad(IRExpression):
-    base:IRVar
-
-class IRStore(IRStatement):
-    base:IRVar
-    i:GLOBALS
-
-class IRSetELT(IRStatement):
-    base:IRVar
-    i:GLOBALS
-    i2:GLOBALS
-
-class IRPrint(IRStatement):
-    v:NONGLOBALS
-
-class IRAssign(IRStatement):
-    v:IRVar
-    right:IRExpression
-
-class IRIf(IRControlTransfer):
-    v:IRVar
-    b_true:IRBlockName
-    b_false:IRBlockName
-
-class IRJump(IRControlTransfer):
-    b:IRBlockName
-
-class IRRet(IRControlTransfer):
-    v:NONGLOBALS
-
-class IRFail(IRControlTransfer):
-    m:str  # For the moment who knows
 
 #TODO flatten math
-# IRArray
-# IRBasicBlock
+# convert to ir_context for purpose of uniform interface
+# to string methods
 # map field names to new name as we go through
 # Peephole optimization
 
