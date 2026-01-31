@@ -2,7 +2,7 @@ import argparse
 from enum import Enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Union
+from typing import Union, get_args
 # TODO
 # Questions
 # No infinite parsing if the while loops don't terminate (check when we return None from tokenizer and end loop and
@@ -259,12 +259,6 @@ class IRAlloc(IRExpression):
     n:IRConst
 
 @dataclass
-class IROp(IRExpression):
-    l:NONGLOBALS
-    op:str
-    r:NONGLOBALS
-
-@dataclass
 class IRGetELT(IRExpression):
     base:IRVar
     i:NONGLOBALS
@@ -330,11 +324,16 @@ class IRProgram:
         self.tmp_count+=1
         return ret
 
-    def get_block(self,block_name):
-        return self.curr_block
+    def mk_tmp(self,expr:IRExpression):
+        tmp = f"tmp{self.use_tmp()}"
+        self.add_stmt(IRAssign(IRVar(tmp),expr))
+        return IRVar(tmp)
 
     def add_stmt(self,stmt:IRStatement):
         self.curr_block.add_statement(stmt)
+
+    def add_ctl_tsf(self,ctl_tsf:IRControlTransfer):
+        self.curr_block.add_ctl_trans(ctl_tsf)
 
 class ASTNode(ABC):
     # to_ir()
@@ -434,32 +433,20 @@ class VarExpression(Expression):
         return IRVar(self.var_name)
 
 
-def is_flat(expr:Expression):
-    return isinstance(expr, (NumExpression,VarExpression,NewObjExpression))
-
 @dataclass
 class ParenExpression(Expression):
     left:Expression
     op:str
     right:Expression
     def to_ir(self,prog:IRProgram):
-        if not is_flat(self.left):
-            expr = self.left.to_ir(prog)
-            tmp = f"tmp{prog.use_tmp()}"
-            s = IRAssign(IRVar(tmp),expr)
-            prog.add_stmt(s)
-            left = IRVar(tmp)
-        else:
-            left =self.left.to_ir(prog)
+        left = self.left.to_ir(prog)
+        if not isinstance(left,get_args(NONGLOBALS)):
+            left = prog.mk_tmp(left)
 
-        if not is_flat(self.right):
-            expr = self.right.to_ir(prog)
-            tmp = f"tmp{prog.use_tmp()}"
-            s = IRAssign(IRVar(tmp),expr)
-            prog.add_stmt(s)
-            right = IRVar(tmp)
-        else:
-            right = self.right.to_ir(prog)
+        right = self.right.to_ir(prog)
+        if not isinstance(right,get_args(NONGLOBALS)):
+            right = prog.mk_tmp(right)
+
         return IROperation(left,self.op,right)
 
 @dataclass
@@ -481,9 +468,11 @@ class FieldReadExpression(Expression):
 class NewObjExpression(Expression):
     class_name:str
     def to_ir(self,prog:IRProgram):
+        field_map = None
         for fm in prog.field_maps:
             if fm.name.endswith(self.class_name):
                 field_map = fm
+
         if not field_map:
             raise NameError(f"No such class {self.class_name}")
 
@@ -545,8 +534,24 @@ class IfOnlyStatement(Statement):
 class WhileStatement(Statement):
     condition:Expression
     statements:list[Statement]
-    def to_ir():
-        pass
+    def to_ir(self,prog:IRProgram):
+        condblock = f"cond{prog.use_tmp()}"
+        trueblock = f"true{prog.use_tmp()}"
+        falseblock = f"false{prog.use_tmp()}"
+
+        prog.add_ctl_tsf(IRJump(condblock))
+        prog.add_block(condblock)
+        expr = self.condition.to_ir(prog)
+        if not isinstance(expr,IRVar):
+            expr = mk_tmp(expr)
+        
+        prog.add_ctl_tsf(IRIf(expr,trueblock,falseblock))
+        prog.add_block(trueblock)
+        for s in self.statements:
+            s.to_ir(prog)
+        prog.add_ctl_tsf(IRJump(condblock))
+        prog.add_block(falseblock)
+        
 
 @dataclass
 class ReturnStatement(Statement):
@@ -557,9 +562,13 @@ class ReturnStatement(Statement):
 @dataclass
 class PrintStatement(Statement):
     val:Expression
-    def to_ir():
-        pass
-
+    def to_ir(self,prog:IRProgram):
+        expr = self.val.to_ir(prog)
+        if isinstance(expr,get_args(NONGLOBALS)):
+            stmt = IRPrint(expr)
+        else:
+            stmt = IRPrint(prog.mk_tmp(expr))
+        prog.add_stmt(stmt)
 
 class Parser:
     def __init__(self,t:Tokenizer):

@@ -582,7 +582,6 @@ def test_cfg_new_class():
     assert isinstance(stmts[4], IRAssign) and stmts[4].v.reg == "y" and stmts[4].val.reg == "tmp0"
 
     stmts = ir2.curr_block.statements
-    # tmp alloc(4), store, tmp assign for fields, store, assign paren op on temp and const
     assert len(stmts) == 5 
     assert isinstance(stmts[0],IRAssign) and stmts[0].v.reg == "tmp0" and stmts[0].val.n == 4
     assert isinstance(stmts[1],IRStore) and stmts[1].base.reg == "tmp0" and stmts[1].i.name == "vtblcls"
@@ -597,22 +596,39 @@ def test_cfg_ifonly():
     pass
 
 def test_cfg_print():
-    ast1 = Program([],[],[PrintStatement(NumExpression(8))])
+    ast1 = Program([],[],[PrintStatement(ParenExpression(NumExpression(8),"-",NumExpression(2)))])
     ast2 = Program([],[],[PrintStatement(VarExpression("var"))])
 
     ir1 = ast1.to_ir_program()
     ir2 = ast2.to_ir_program()
 
     stmts = ir1.curr_block.statements
-    assert len(stmts) = 1
-    assert isinstance(stmts[0],IRPrint) and stmts[0].n == 8
+    assert len(stmts) == 2
+    assert isinstance(stmts[0],IRAssign) and stmts[0].val.op == "-"
+    assert isinstance(stmts[1],IRPrint) and stmts[0].v.reg == "tmp0"
 
-    stmts = ir1.curr_block.statements
-    assert len(stmts) = 1
-    assert isinstance(stmts[0],IRPrint) and stmts[0].reg == "var"
+    stmts = ir2.curr_block.statements
+    assert len(stmts) == 1
+    assert isinstance(stmts[0],IRPrint) and stmts[0].v.reg == "var"
 
 def test_cfg_while():
-    pass
+    ast1 = Program([Class("x",[],[])],[],[PrintStatement(NumExpression(9)),WhileStatement(NewObjExpression("x"),[PrintStatement(VarExpression("pickles")),PrintStatement(VarExpression("pickles"))]),PrintStatement(NumExpression(9)),PrintStatement(NumExpression(9)),PrintStatement(NumExpression(9))])
+
+    ir1 = ast1.to_ir_program()
+    assert len(ir1.blocks) == 4 #start block, check conditional block, true block, false block
+    before = ir1.blocks[0]
+    cond = ir1.blocks[1]
+    true = ir1.blocks[2]
+    false = ir1.blocks[3]
+    
+    assert len(before.statements) == 1
+    assert isinstance(before.ctl_trans,IRJump) and "cond" in before.ctl_trans.b
+    assert len(cond.statements) == 4
+    assert isinstance(cond.ctl_trans,IRIf) and "false" in cond.ctl_trans.b_false and "true" in  cond.ctl_trans.b_true
+    assert len(true.statements) == 2
+    assert isinstance(true.ctl_trans,IRJump) and "cond" in true.ctl_trans.b
+    assert len(false.statements) == 3
+
 
 def test_cfg_method_use():
     pass
