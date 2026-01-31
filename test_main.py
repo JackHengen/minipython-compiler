@@ -535,17 +535,18 @@ def test_parse_program_declaration():
     tree = Parser(Tokenizer(first_example)).parse_program()
     assert len(tree.classes) == 2 and tree.classes[0].class_name == "A" and tree.classes[1].class_name == "B"
 
-def test_cfg_of_paren_exprs_and_assign():
-    snippet = """x = (5 / (3+4))"""
-    t1 = Tokenizer(snippet)
+    
+def test_cfg_paren_exprs_and_assign():
+    t1 = Tokenizer("""x = (5 / (3+4))""")
     p1 = Parser(t1)
 
-    ast = p1.parse_stmt()
+
     prog = IRProgram([],[],{})
     prog.add_block("foo")
-    ast.to_ir(prog)
+    ast1 = p1.parse_stmt()
+    ast1.to_ir(prog)
+
     stmts = prog.curr_block.statements
-    print(stmts)
     assert len(stmts) == 2
 
     final_assign = stmts[-1]
@@ -555,3 +556,75 @@ def test_cfg_of_paren_exprs_and_assign():
     assert isinstance(final_assign.val.r, IRVar) and final_assign.val.r.reg == "tmp0"
     assert isinstance(final_assign.val.l, IRConst) and final_assign.val.l.n == 5
 
+def test_cfg_vtbls_and_fields():
+    ast1 = Program([Class("foo",["x","y"],[Method("a",[],[],[AssignVarStatement("w",ParenExpression(NumExpression(2),"+",NumExpression(3)))])])],[],[])
+
+    ir1 = ast1.to_ir_program()
+
+    v = ir1.vtbls[0]
+    assert isinstance(v, IRArray) and v.name == "vtblfoo" and len(v.vals) == 1 and v.vals[0]  == "fooa"
+    f = ir1.field_maps[0]
+    assert isinstance(f, IRArray) and f.name == "fieldsfoo" and len(f.vals) == 2 and f.vals[0] == 2 and f.vals[1] == 3
+    
+def test_cfg_new_class():
+    ast1 = Program([Class("x",["x"],[])],[],[AssignVarStatement("y",NewObjExpression("x"))])
+    ast2 = Program([Class("cls",["fldone","fldtwo"],[])],[],[AssignVarStatement("var",ParenExpression(NumExpression(0),"+",NewObjExpression("cls")))])
+
+    ir1 = ast1.to_ir_program()
+    ir2 = ast2.to_ir_program()
+
+    stmts = ir1.curr_block.statements
+    assert len(stmts) == 5
+    assert isinstance(stmts[0],IRAssign) and stmts[0].v.reg == "tmp0" and stmts[0].val.n == 3
+    assert isinstance(stmts[1],IRStore) and stmts[1].base.reg == "tmp0" and stmts[1].i.name == "vtblx"
+    assert isinstance(stmts[2],IRAssign) and stmts[2].v.reg == "tmp1" and stmts[2].val.l.reg == "tmp0" and stmts[2].val.r.n == 8
+    assert isinstance(stmts[3],IRStore) and stmts[3].base.reg == "tmp1" and stmts[3].i.name == "fieldsx"
+    assert isinstance(stmts[4], IRAssign) and stmts[4].v.reg == "y" and stmts[4].val.reg == "tmp0"
+
+    stmts = ir2.curr_block.statements
+    # tmp alloc(4), store, tmp assign for fields, store, assign paren op on temp and const
+    assert len(stmts) == 5 
+    assert isinstance(stmts[0],IRAssign) and stmts[0].v.reg == "tmp0" and stmts[0].val.n == 4
+    assert isinstance(stmts[1],IRStore) and stmts[1].base.reg == "tmp0" and stmts[1].i.name == "vtblcls"
+    assert isinstance(stmts[2],IRAssign) and stmts[2].v.reg == "tmp1" and stmts[2].val.l.reg == "tmp0" and stmts[2].val.r.n == 8
+    assert isinstance(stmts[3],IRStore) and stmts[3].base.reg == "tmp1" and stmts[3].i.name == "fieldscls"
+    assert isinstance(stmts[4],IRAssign) and stmts[4].v.reg=="var" and stmts[4].val.l.n == 0 and stmts[4].val.r.reg == "tmp0"
+
+def test_cfg_if():
+    pass
+
+def test_cfg_ifonly():
+    pass
+
+def test_cfg_print():
+    ast1 = Program([],[],[PrintStatement(NumExpression(8))])
+    ast2 = Program([],[],[PrintStatement(VarExpression("var"))])
+
+    ir1 = ast1.to_ir_program()
+    ir2 = ast2.to_ir_program()
+
+    stmts = ir1.curr_block.statements
+    assert len(stmts) = 1
+    assert isinstance(stmts[0],IRPrint) and stmts[0].n == 8
+
+    stmts = ir1.curr_block.statements
+    assert len(stmts) = 1
+    assert isinstance(stmts[0],IRPrint) and stmts[0].reg == "var"
+
+def test_cfg_while():
+    pass
+
+def test_cfg_method_use():
+    pass
+
+def test_cfg_field_access():
+    pass
+
+def test_cfg_field_assign():
+    pass
+
+def test_cfg_method_blocks():
+    pass
+
+def test_ir_to_str():
+    pass
