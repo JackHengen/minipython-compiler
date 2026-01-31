@@ -413,6 +413,8 @@ class Program(ASTNode):
 @dataclass
 class NumExpression(Expression):
     num:int
+    def __post_init__(self):
+        self.num = int(self.num)
     def to_ir(self,counter):
         return [],IRConst(self.num),counter
 
@@ -451,7 +453,7 @@ class ParenExpression(Expression):
             stmts.extend(s)
             tmp = f"tmp{counter}"
             counter+=1
-            s = IRAssign(tmp,expr)
+            s = IRAssign(IRVar(tmp),expr)
             stmts.append(s)
             right = IRVar(tmp)
         else:
@@ -494,7 +496,7 @@ class AssignVarStatement(Statement):
         stmts, expr, _ = self.val.to_ir(0)
         for stmt in stmts:
             prog.add_stmt(stmt)
-        s = IRAssign(self.var_name,expr)
+        s = IRAssign(IRVar(self.var_name),expr)
         prog.add_stmt(s)
 
 
@@ -612,8 +614,7 @@ class Parser:
                 args = []
                 t = self.t.peek()
                 if t.type != TokenType.RPAREN:
-                    e = self.parse_expr()
-                    args.append(e)
+                    args.append(self.parse_expr())
                     while((t := self.t.get_next()).type == TokenType.COMMA):
                         args.append(self.parse_expr())
                     if t.type != TokenType.RPAREN:
@@ -680,8 +681,9 @@ class Parser:
         _, ident, _, _, _ = self.parse(TokenType.CLASS,TokenType.IDENTIFIER,TokenType.LSBRAC,TokenType.NEWLINE,TokenType.FIELDS)
         field_names = self.parse_identifier_list()
         self.parse(TokenType.NEWLINE)
-        mths = self.parse_until(TokenType.RSBRAC,Method)
-        return Class(ident,field_names,mths)
+        mths_nested = self.parse_until(TokenType.RSBRAC,Method) # parse_until returns list-of-lists (one list per typeset entry)
+        methods = mths_nested[0]
+        return Class(ident,field_names,methods)
 
 
     def parse_mthd(self):
