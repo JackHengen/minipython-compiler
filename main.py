@@ -3,12 +3,6 @@ from enum import Enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Union, get_args
-# TODO
-# Questions
-# No infinite parsing if the while loops don't terminate (check when we return None from tokenizer and end loop and
-# check for that and provide a correct error message
-# Symantic Analyzer - right now only capitalize classes?
-# Use objgraph for output for parser
 
 class TokenType(Enum):
     LPAREN = 0
@@ -310,6 +304,7 @@ class IRProgram:
     vtbls: list[IRArray]
     field_maps: list[IRArray]
     field_name_to_map_index: dict[str, int]
+    mthd_name_to_vtbl_index: dict[str, int]
     blocks: list[IRBasicBlock] = field(default_factory=list)
     curr_block:IRBasicBlock = None
     tmp_count:int = 0
@@ -334,6 +329,9 @@ class IRProgram:
 
     def add_ctl_tsf(self,ctl_tsf:IRControlTransfer):
         self.curr_block.add_ctl_trans(ctl_tsf)
+
+    def to_ssa(self):
+        pass
 
 class ASTNode(ABC):
     # to_ir()
@@ -378,12 +376,20 @@ class Program(ASTNode):
 
     def to_ir_program(self):
         field_map = {}
-        counter = 0
+        mthd_map = {}
+        fcounter = 0
+        vcounter = 0
         for c in self.classes:
             for f in c.fields:
                 if f not in field_map:
-                    field_map[f] = counter
-                    counter += 1
+                    field_map[f] = fcounter
+                    fcounter += 1
+            for m in c.methods:
+                n = m.method_name
+                if n not in mthd_map:
+                    mthd_map[n] = vcounter
+                    vcounter += 1
+
 
         vtbls = []
         class_field_maps = []
@@ -394,17 +400,20 @@ class Program(ASTNode):
             for i in range(len(field_map)):
                 class_map.append(0)
 
+            vtbl = []
+            for i in range(len(mthd_map)):
+                vtbl.append(0) 
+
             for f in c.fields:
                 class_map[field_map[f]] = counter
                 counter += 1
             class_field_maps.append(IRArray(class_map,f"fields{c.class_name}"))
 
-            vtbl = []
             for m in c.methods:
-                vtbl.append(c.class_name + m.method_name)
+                vtbl[mthd_map[m.method_name]] = (c.class_name + m.method_name)
             vtbls.append(IRArray(vtbl,f"vtbl{c.class_name}"))
 
-        prog = IRProgram(vtbls,class_field_maps,field_map)
+        prog = IRProgram(vtbls,class_field_maps,field_map,mthd_map)
         return self.to_ir(prog)
 
     def to_ir(self,prog:IRProgram):
@@ -453,16 +462,46 @@ class ParenExpression(Expression):
 class MethodExpression(Expression):
     expr:Expression
     method_name:str
-    args:list[str]
-    def to_ir():
-        pass
+    args:list[Expression]
+    def to_ir(self,prog:IRProgram):
+        args = [a.to_ir(prog) for a in self.args]
+        for i in range(len(args)):
+            a = args[i]
+            if not isinstance(a,NONGLOBALS):
+                args[i] = prog.mk_tmp(a)
+
+        expr = self.expr.to_ir(prog)
+        if not isinstance(expr,IRVar):
+            expr = prog.mk_tmp(expr)
+        load = prog.mk_tmp(IRLoad(expr))
+        
+        base = load
+        i = prog.mthd_name_to_vtbl_index[self.method_name]
+        getelt = prog.mk_tmp(IRGetELT(base,i))
+
+        return IRCall(getelt,expr,args)
+
 
 @dataclass
 class FieldReadExpression(Expression):
     expr:Expression
     field_name:str
-    def to_ir():
-        pass
+    def to_ir(self,prog:IRProgram):
+        expr = self.expr.to_ir(prog)
+        if not isinstance(expr,IRVar):
+            expr = prog.mk_tmp(expr)
+
+        addr = prog.mk_tmp(IROperation(expr,"+",IRConst(8)))
+
+        load = prog.mk_tmp(IRLoad(addr)) # load in fields for class
+
+        base = load
+        field_ind = prog.field_name_to_map_index[self.field_name] 
+
+        class_field_ind = prog.mk_tmp(IRGetELT(base,field_ind)) # grab field from fields
+
+        return IRGetELT(expr,class_field_ind)
+        
 
 @dataclass
 class NewObjExpression(Expression):
@@ -512,7 +551,7 @@ class AssignFieldStatement(Statement):
     class_name:str
     field_name:str
     val:Expression
-    def to_ir():
+    def to_ir(self,prog:IRProgram):
         pass
 
 @dataclass
@@ -780,10 +819,9 @@ class Parser:
 
 
 
-#TODO flatten math
-# convert to ir_context for purpose of uniform interface
+# change order of args in IRPROG
 # to string methods
-# map field names to new name as we go through
+# ssa
 # Peephole optimization
 
 

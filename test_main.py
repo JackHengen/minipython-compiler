@@ -541,7 +541,7 @@ def test_cfg_paren_exprs_and_assign():
     p1 = Parser(t1)
 
 
-    prog = IRProgram([],[],{})
+    prog = IRProgram([],[],{},{})
     prog.add_block("foo")
     ast1 = p1.parse_stmt()
     ast1.to_ir(prog)
@@ -557,14 +557,23 @@ def test_cfg_paren_exprs_and_assign():
     assert isinstance(final_assign.val.l, IRConst) and final_assign.val.l.n == 5
 
 def test_cfg_vtbls_and_fields():
-    ast1 = Program([Class("foo",["x","y"],[Method("a",[],[],[AssignVarStatement("w",ParenExpression(NumExpression(2),"+",NumExpression(3)))])])],[],[])
+    ast1 = Program([
+        Class("foo",["x","y"],[Method("a",[],[],[AssignVarStatement("w",ParenExpression(NumExpression(2),"+",NumExpression(3)))])]),
+        Class("bar",["y","x"],[Method("b",[],[],[AssignVarStatement("w",ParenExpression(NumExpression(2),"+",NumExpression(3)))]),Method("a",[],[],[AssignVarStatement("w",ParenExpression(NumExpression(2),"+",NumExpression(3)))])])
+             ],
+        [],[])
 
     ir1 = ast1.to_ir_program()
 
-    v = ir1.vtbls[0]
-    assert isinstance(v, IRArray) and v.name == "vtblfoo" and len(v.vals) == 1 and v.vals[0]  == "fooa"
-    f = ir1.field_maps[0]
-    assert isinstance(f, IRArray) and f.name == "fieldsfoo" and len(f.vals) == 2 and f.vals[0] == 2 and f.vals[1] == 3
+    v1 = ir1.vtbls[0]
+    v2 = ir1.vtbls[1]
+    assert isinstance(v1, IRArray) and v1.name == "vtblfoo" and len(v1.vals) == 2 and v1.vals[0]  == "fooa" and v1.vals[1] == 0
+    assert isinstance(v2, IRArray) and v2.name == "vtblbar" and len(v2.vals) == 2 and v2.vals[0]  == "bara" and v2.vals[1] == "barb"
+
+    f1 = ir1.field_maps[0]
+    f2 = ir1.field_maps[1]
+    assert isinstance(f1, IRArray) and f1.name == "fieldsfoo" and len(f1.vals) == 2 and f1.vals[0] == 2 and f1.vals[1] == 3
+    assert isinstance(f2, IRArray) and f2.name == "fieldsbar" and len(f2.vals) == 2 and f2.vals[0] == 3 and f2.vals[1] == 2
     
 def test_cfg_new_class():
     ast1 = Program([Class("x",["x"],[])],[],[AssignVarStatement("y",NewObjExpression("x"))])
@@ -685,7 +694,7 @@ def test_cfg_this_expr():
 def test_cfg_method_use():
     # ignore method statements bc we will test later for appropriate creation of methods, fake the creation of the vtbl and fields instead
     ast1 = Program([],[],[AssignVarStatement("z",NewObjExpression("x")),AssignVarStatement("y",MethodExpression(VarExpression("z"),"a",[NumExpression(1),NumExpression(2)]))])
-    prog = IRProgram([IRArray(["xb","xa"],"vtblx")],[IRArray([],"fieldsx")],{})
+    prog = IRProgram([IRArray(["xb","xa"],"vtblx")],[IRArray([],"fieldsx")],{},{"b":0,"a":1})
 
     ir1 = ast1.to_ir(prog)
     block = ir1.blocks[0]
@@ -708,21 +717,140 @@ def test_cfg_method_use():
     #grab mthd
     assert isinstance(stmts[6],IRAssign)  and stmts[6].v.reg == "tmp3"
     get_mthd = stmts[6].val
-    assert isinstance(get_mthd,IRGetELT) and get_mthd.base.reg == "tmp2" and get_mthd.i == 8
+    assert isinstance(get_mthd,IRGetELT) and get_mthd.base.reg == "tmp2" and get_mthd.i == 1 # bc we are calling the second method in the vtable
 
     #call mthd
     call = stmts[7].val
-    assert isinstance(call,IRCall) and call.c.reg == "tmp2" and call.r.reg =="z"
+    assert isinstance(call,IRCall) and call.c.reg == "tmp3" and call.r.reg =="z" and len(call.args) == 2
+
+    #Now onto a little more complicated version of above
+    ast2 = Program([],[],[AssignVarStatement("z",MethodExpression(NewObjExpression("x"),"a",[NumExpression(1),ParenExpression(NumExpression(11),"+",NumExpression(2))]))])
+    prog = IRProgram([IRArray(["xa","xb"],"vtblx")],[IRArray([],"fieldsx")],{},{"a":0,"b":1})
+
+    ir2 = ast2.to_ir(prog)
+    block = ir2.blocks[0]
+    stmts = block.statements
+
+    assert len(ir2.blocks) == 1
+    assert len(stmts) == 8 
+
+    #assigning paren arg to tmp0
+    assert isinstance(stmts[0],IRAssign) and isinstance(stmts[0].val,IROperation) 
+
+    #creating object
+    assert isinstance(stmts[1],IRAssign) #tmp1
+    assert isinstance(stmts[2],IRStore)
+    assert isinstance(stmts[3],IRAssign) #tmp2
+    assert isinstance(stmts[4],IRStore)
+
+    #grab vtbl
+    assert isinstance(stmts[5],IRAssign) and stmts[5].v.reg == "tmp3"
+    load = stmts[5].val
+    assert isinstance(load,IRLoad) and load.base.reg == "tmp1"
+
+    #grab mthd
+    assert isinstance(stmts[6],IRAssign)  and stmts[6].v.reg == "tmp4"
+    get_mthd = stmts[6].val
+    assert isinstance(get_mthd,IRGetELT) and get_mthd.base.reg == "tmp3" and get_mthd.i == 0 # bc we are calling the first method in the vtable
+
+    #call mthd
+    call = stmts[7].val
+    assert isinstance(call,IRCall) and call.c.reg == "tmp4" and call.r.reg =="tmp1" and len(call.args) == 2
 
 
 def test_cfg_field_access():
-    pass
+    ast1 = Program([],[],[PrintStatement(FieldReadExpression(NewObjExpression("x"),"a"))])
+    prog = IRProgram([IRArray([],"vtblx")],[IRArray([2,3,4],"fieldsx")],{"foo":0,"a":1,"bar":2},{})
+    ir1 = ast1.to_ir(prog)
+    assert len(ir1.blocks) == 1
+    stmts = ir1.blocks[0].statements
+    assert len(stmts) == 9
 
+    #creating object
+    assert isinstance(stmts[0],IRAssign) #tmp0
+    assert isinstance(stmts[1],IRStore)
+    assert isinstance(stmts[2],IRAssign) #tmp1
+    assert isinstance(stmts[3],IRStore)
+
+    #point to fields
+    assert isinstance(stmts[4],IRAssign) #tmp2
+    op = stmts[4].val
+    assert isinstance(op,IROperation) and op.l.reg == "tmp0" and op.r.n == 8
+
+    #grab fields for this obj
+    assert isinstance(stmts[5],IRAssign) #tmp3
+    load = stmts[5].val
+    assert isinstance(load,IRLoad) and load.base.reg == "tmp2"
+
+    #grab field index for this field on this obj
+    assert isinstance(stmts[6],IRAssign) #tmp4
+    get_field_ind = stmts[6].val
+    assert isinstance(get_field_ind,IRGetELT) and get_field_ind.base.reg == "tmp3" and get_field_ind.i == 1
+
+    #grab field from field index
+    assert isinstance(stmts[7],IRAssign) #tmp5
+    get_field = stmts[7].val
+    assert isinstance(get_field,IRGetELT) and get_field.base.reg == "tmp0" and get_field.i.reg == "tmp4"
+
+    assert isinstance(stmts[8],IRPrint) and stmts[8].v.reg == "tmp5"
+
+    
 def test_cfg_field_assign():
     pass
+    ast1 = Program([],[],[AssignFieldStatement(NewObjExpression("x"),"a",ParenExpression(NumExpression(5),"*",NumExpression(14)))])
+    prog = IRProgram([IRArray([],"vtblx")],[IRArray([2,3,4],"fieldsx")],{"foo":0,"a":1,"bar":2},{})
+    ir1 = ast1.to_ir(prog)
+    assert len(ir1.blocks) == 1
+    stmts = ir1.blocks[0].statements
+    assert len(stmts) == 9
+
+    #creating object
+    assert isinstance(stmts[0],IRAssign) #tmp0
+    assert isinstance(stmts[1],IRStore)
+    assert isinstance(stmts[2],IRAssign) #tmp1
+    assert isinstance(stmts[3],IRStore)
+
+    #point to fields
+    assert isinstance(stmts[4],IRAssign) #tmp2
+    op = stmts[4].val
+    assert isinstance(op,IROperation) and op.l.reg == "tmp0" and op.r.n == 8
+
+    #grab fields for this obj
+    assert isinstance(stmts[5],IRAssign) #tmp3
+    load = stmts[5].val
+    assert isinstance(load,IRLoad) and load.base.reg == "tmp2"
+
+    #grab field index for this field on this obj
+    assert isinstance(stmts[6],IRAssign) #tmp4
+    get_field_ind = stmts[6].val
+    assert isinstance(get_field_ind,IRGetELT) and get_field_ind.base.reg == "tmp3" and get_field_ind.i == 1
+
+    #grab field from field index
+    assert isinstance(stmts[7],IRAssign) #tmp5
+    get_field = stmts[7].val
+    assert isinstance(get_field,IRGetELT) and get_field.base.reg == "tmp0" and get_field.i.reg == "tmp4"
+
+    assert isinstance(stmts[8],IRPrint) and stmts[8].v.reg == "tmp5"
 
 def test_cfg_method_blocks():
     pass
 
 def test_ir_to_str():
     pass
+
+def test_cfg_to_ast():
+    ast1 = Program([],[],[]) #Make this something where we continously assign to the same field
+    ir = ast1.to_ir_program()
+    ir.to_ssa()
+
+    seen = set()
+    for b in ir.blocks:
+        for s in b.statements:
+            if isinstance(s,IRAssign):
+                assigned = s.v.reg
+                assert assigned not in seen
+                seen.add(assigned)
+
+
+    
+
