@@ -494,8 +494,8 @@ class NewObjExpression(Expression):
 
 @dataclass
 class ThisExpression(Expression):
-    def to_ir():
-       return 
+    def to_ir(self,prog:IRProgram):
+        return IRVar("this")
 
 @dataclass
 class AssignVarStatement(Statement):
@@ -520,15 +520,45 @@ class IfStatement(Statement):
     condition:Expression
     statements_true:list[Statement]
     statements_false:list[Statement]
-    def to_ir():
-        pass
+    def to_ir(self,prog:IRProgram):
+        trueblock = f"true{prog.use_tmp()}"
+        falseblock = f"false{prog.use_tmp()}"
+        afterblock = f"after{prog.use_tmp()}"
+
+        expr = self.condition.to_ir(prog)
+        if not isinstance(expr,IRVar):
+            expr = prog.mk_tmp(expr)
+
+        prog.add_ctl_tsf(IRIf(expr,trueblock,falseblock))
+        prog.add_block(trueblock)
+        for s in self.statements_true:
+            s.to_ir(prog)
+        prog.add_ctl_tsf(IRJump(afterblock))
+
+        prog.add_block(falseblock)
+        for s in self.statements_false:
+            s.to_ir(prog)
+        prog.add_ctl_tsf(IRJump(afterblock))
+        prog.add_block(afterblock)
 
 @dataclass
 class IfOnlyStatement(Statement):
     condition:Expression
     statements:list[Statement]
-    def to_ir():
-        pass
+    def to_ir(self,prog:IRProgram):
+        trueblock = f"true{prog.use_tmp()}"
+        afterblock = f"after{prog.use_tmp()}"
+
+        expr = self.condition.to_ir(prog)
+        if not isinstance(expr,IRVar):
+            expr = prog.mk_tmp(expr)
+
+        prog.add_ctl_tsf(IRIf(expr,trueblock,afterblock))
+        prog.add_block(trueblock)
+        for s in self.statements:
+            s.to_ir(prog)
+        prog.add_ctl_tsf(IRJump(afterblock))
+        prog.add_block(afterblock)
 
 @dataclass
 class WhileStatement(Statement):
@@ -556,8 +586,13 @@ class WhileStatement(Statement):
 @dataclass
 class ReturnStatement(Statement):
     val:Expression
-    def to_ir():
-        pass
+    def to_ir(self,prog:IRProgram):
+        expr = self.val.to_ir(prog)
+        if isinstance(expr,get_args(NONGLOBALS)):
+            stmt = IRRet(expr)
+        else:
+            stmt = IRRet(prog.mk_tmp(expr))
+        prog.add_stmt(stmt)
 
 @dataclass
 class PrintStatement(Statement):

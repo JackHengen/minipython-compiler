@@ -589,11 +589,39 @@ def test_cfg_new_class():
     assert isinstance(stmts[3],IRStore) and stmts[3].base.reg == "tmp1" and stmts[3].i.name == "fieldscls"
     assert isinstance(stmts[4],IRAssign) and stmts[4].v.reg=="var" and stmts[4].val.l.n == 0 and stmts[4].val.r.reg == "tmp0"
 
-def test_cfg_if():
-    pass
+def test_cfg_if_only():
+    ast1 = Program([],[],[IfOnlyStatement(ParenExpression(NumExpression(2),"+",NumExpression(3)),[AssignVarStatement("y",NumExpression(1))])])
+    ir1 = ast1.to_ir_program()
 
-def test_cfg_ifonly():
-    pass
+    assert len(ir1.blocks) == 3 #start block is the conditional, true block, after block
+    before = ir1.blocks[0]
+    true = ir1.blocks[1]
+    after = ir1.blocks[2]
+    assert len(before.statements) == 1 #assignment to tmp0
+
+    assert isinstance(before.statements[0],IRAssign) and before.statements[0].v.reg == "tmp2" and before.statements[0].val.op == "+"
+    assert isinstance(before.ctl_trans,IRIf) and before.ctl_trans.v.reg == "tmp2" and "true" in before.ctl_trans.b_true and "after" in before.ctl_trans.b_false
+    assert len(true.statements) == 1
+    assert isinstance(true.ctl_trans,IRJump) and "after" in true.ctl_trans.b
+    assert len(after.statements) == 0
+
+def test_cfg_if():
+    ast1 = Program([],[],[IfStatement(VarExpression("x"),[AssignVarStatement("y",NumExpression(1))],[AssignVarStatement("z",NumExpression(2))])])
+    ir1 = ast1.to_ir_program()
+
+    assert len(ir1.blocks) == 4 #start block is the conditional, true block, false block, after block
+    before = ir1.blocks[0]
+    true = ir1.blocks[1]
+    false = ir1.blocks[2]
+    after = ir1.blocks[3]
+    
+    assert len(before.statements) == 0
+    assert isinstance(before.ctl_trans,IRIf) and "false" in before.ctl_trans.b_false and "true" in before.ctl_trans.b_true and before.ctl_trans.v.reg == "x"
+    assert len(true.statements) == 1
+    assert isinstance(true.ctl_trans,IRJump) and "after" in true.ctl_trans.b
+    assert len(false.statements) == 1
+    assert isinstance(false.ctl_trans,IRJump) and "after" in false.ctl_trans.b
+    assert len(after.statements) == 0
 
 def test_cfg_print():
     ast1 = Program([],[],[PrintStatement(ParenExpression(NumExpression(8),"-",NumExpression(2)))])
@@ -629,9 +657,63 @@ def test_cfg_while():
     assert isinstance(true.ctl_trans,IRJump) and "cond" in true.ctl_trans.b
     assert len(false.statements) == 3
 
+def test_cfg_return():
+    ast1 = Program([],[],[ReturnStatement(NumExpression(9))])
+    ir1 = ast1.to_ir_program()
+    block = ir1.blocks[0]
+    stmt = block.statements[0]
+    assert len(ir1.blocks) == 1
+    assert isinstance(stmt, IRRet) and stmt.v.n == 9
+
+    ast2 = Program([],[],[ReturnStatement(ParenExpression(NumExpression(2),"+",ParenExpression(NumExpression(3),"+",NumExpression(4))))])
+    ir2 = ast2.to_ir_program()
+    block = ir2.blocks[0]
+    assert len(ir2.blocks) == 1
+    stmts = block.statements
+    assert isinstance(stmts[0],IRAssign) and stmts[0].v.reg == "tmp0" and stmts[0].val.op == "+"
+    assert isinstance(stmts[1],IRAssign) and stmts[1].v.reg == "tmp1" and stmts[1].val.op == "+"
+    assert isinstance(stmts[2],IRRet) and stmts[2].v.reg == "tmp1"
+
+def test_cfg_this_expr():
+    ast1 = Program([],[],[AssignVarStatement("x",ThisExpression())])
+    ir1 = ast1.to_ir_program()
+    block = ir1.blocks[0]
+    stmt = block.statements[0]
+    assert len(ir1.blocks) == 1
+    assert isinstance(stmt, IRAssign) and stmt.v.reg == "x" and stmt.val.reg == "this"
 
 def test_cfg_method_use():
-    pass
+    # ignore method statements bc we will test later for appropriate creation of methods, fake the creation of the vtbl and fields instead
+    ast1 = Program([],[],[AssignVarStatement("z",NewObjExpression("x")),AssignVarStatement("y",MethodExpression(VarExpression("z"),"a",[NumExpression(1),NumExpression(2)]))])
+    prog = IRProgram([IRArray(["xb","xa"],"vtblx")],[IRArray([],"fieldsx")],{})
+
+    ir1 = ast1.to_ir(prog)
+    block = ir1.blocks[0]
+    stmts = block.statements
+    assert len(ir1.blocks) == 1
+    assert len(stmts) == 8 
+
+    #creating object
+    assert isinstance(stmts[0],IRAssign) #tmp0
+    assert isinstance(stmts[1],IRStore)
+    assert isinstance(stmts[2],IRAssign) #tmp1
+    assert isinstance(stmts[3],IRStore)
+    assert isinstance(stmts[4],IRAssign) and stmts[4].val.reg == "tmp0" and stmts[4].v.reg =="z"
+
+    #grab vtbl
+    assert isinstance(stmts[5],IRAssign) and stmts[5].v.reg == "tmp2"
+    load = stmts[5].val
+    assert isinstance(load,IRLoad) and load.base.reg == "z" 
+
+    #grab mthd
+    assert isinstance(stmts[6],IRAssign)  and stmts[6].v.reg == "tmp3"
+    get_mthd = stmts[6].val
+    assert isinstance(get_mthd,IRGetELT) and get_mthd.base.reg == "tmp2" and get_mthd.i == 8
+
+    #call mthd
+    call = stmts[7].val
+    assert isinstance(call,IRCall) and call.c.reg == "tmp2" and call.r.reg =="z"
+
 
 def test_cfg_field_access():
     pass
