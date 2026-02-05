@@ -38,12 +38,13 @@ class Stack [
 	!tmp.next = &this.list
 	!this.list = tmp
 	return 0
-    method pop() with locals tmp:
+    method pop() with locals tmp, head:
         if (&this.list == 0): {
             return 0
         } else {
-            tmp = ^this.getVal()
-            !this.list = ^this.getNext()
+            head = &this.list
+            tmp = ^head.getVal()
+            !this.list = ^head.getNext()
             return tmp
         }
 ]
@@ -82,12 +83,13 @@ class Stack [
 	!tmp.next = &this.list
 	!this.list = tmp
 	return 0
-    method pop() with locals tmp:
+    method pop() with locals tmp, head:
         if (&this.list == 0): {
             return 0
         } else {
-            tmp = ^this.getVal()
-            !this.list = ^this.getNext()
+            head = &this.list
+            tmp = ^head.getVal()
+            !this.list = ^head.getNext()
             return tmp
         }
 ]
@@ -110,7 +112,8 @@ main with stk, stkr:
     stk = @Stack
     !stk.list = 0
     stkr = @Stacker
-    _ = ^stkr.do(stk)"""
+    _ = ^stkr.do(stk)
+"""
 
 # This code is a kind of *negative* test: value number should not do *anything* with the code for these methods!
 # In general, they have code which could be recognized and optimized in some way (e.g., via code motion), but
@@ -288,11 +291,11 @@ def test_parse_field_update_stmt():
     p3 = Parser(t3)
 
     tree = p1.parse_stmt()
-    assert isinstance(tree, AssignFieldStatement) and tree.class_name == "x" and tree.field_name == "y"
+    assert isinstance(tree, AssignFieldStatement) and tree.obj_expr.var_name == "x" and tree.field_name == "y"
     assert isinstance(tree.val, NumExpression) and tree.val.num == 3
 
     tree = p3.parse_stmt()
-    assert isinstance(tree, AssignFieldStatement) and tree.class_name == "name" and tree.field_name == "other"
+    assert isinstance(tree, AssignFieldStatement) and tree.obj_expr.var_name == "name" and tree.field_name == "other"
     assert isinstance(tree.val, MethodExpression) and tree.val.method_name == "f" and len(tree.val.args) == 1
     assert isinstance(tree.val.args[0], NumExpression) and tree.val.args[0].num == 3
     assert isinstance(tree.val.expr, VarExpression) and tree.val.expr.var_name == "z"
@@ -327,7 +330,7 @@ def test_parse_if_stmt():
     assert isinstance(tree, IfStatement) and len(tree.statements_true) == 2 and len(tree.statements_false) == 1
     assert isinstance(tree.condition, VarExpression) and tree.condition.var_name == "hi"
     assert isinstance(tree.statements_true[0], AssignVarStatement) and tree.statements_true[0].var_name == "x"
-    assert isinstance(tree.statements_false[0], AssignFieldStatement) and tree.statements_false[0].class_name == "name" and tree.statements_false[0].field_name == "other"
+    assert isinstance(tree.statements_false[0], AssignFieldStatement) and tree.statements_false[0].obj_expr.var_name == "name" and tree.statements_false[0].field_name == "other"
 
     tree = p2.parse_stmt()
     assert isinstance(tree, IfStatement) and len(tree.statements_true) == 1 and len(tree.statements_false) == 1
@@ -670,9 +673,9 @@ def test_cfg_return():
     ast1 = Program([],[],[ReturnStatement(NumExpression(9))])
     ir1 = ast1.to_ir_program()
     block = ir1.blocks[0]
-    stmt = block.statements[0]
+    assert len(block.statements) == 0
     assert len(ir1.blocks) == 1
-    assert isinstance(stmt, IRRet) and stmt.v.n == 9
+    assert isinstance(block.ctl_trans, IRRet) and block.ctl_trans.v.n == 9
 
     ast2 = Program([],[],[ReturnStatement(ParenExpression(NumExpression(2),"+",ParenExpression(NumExpression(3),"+",NumExpression(4))))])
     ir2 = ast2.to_ir_program()
@@ -681,7 +684,7 @@ def test_cfg_return():
     stmts = block.statements
     assert isinstance(stmts[0],IRAssign) and stmts[0].v.reg == "tmp0" and stmts[0].val.op == "+"
     assert isinstance(stmts[1],IRAssign) and stmts[1].v.reg == "tmp1" and stmts[1].val.op == "+"
-    assert isinstance(stmts[2],IRRet) and stmts[2].v.reg == "tmp1"
+    assert isinstance(block.ctl_trans,IRRet) and block.ctl_trans.v.reg == "tmp1"
 
 def test_cfg_this_expr():
     ast1 = Program([],[],[AssignVarStatement("x",ThisExpression())])
@@ -796,12 +799,13 @@ def test_cfg_field_access():
 
     
 def test_cfg_field_assign():
-    pass
     ast1 = Program([],[],[AssignFieldStatement(NewObjExpression("x"),"a",ParenExpression(NumExpression(5),"*",NumExpression(14)))])
     prog = IRProgram([IRArray([],"vtblx")],[IRArray([2,3,4],"fieldsx")],{"foo":0,"a":1,"bar":2},{})
     ir1 = ast1.to_ir(prog)
     assert len(ir1.blocks) == 1
     stmts = ir1.blocks[0].statements
+    for s in stmts:
+        print(s)
     assert len(stmts) == 9
 
     #creating object
@@ -825,20 +829,65 @@ def test_cfg_field_assign():
     get_field_ind = stmts[6].val
     assert isinstance(get_field_ind,IRGetELT) and get_field_ind.base.reg == "tmp3" and get_field_ind.i == 1
 
-    #grab field from field index
+    #handle expression of assignment
     assert isinstance(stmts[7],IRAssign) #tmp5
-    get_field = stmts[7].val
-    assert isinstance(get_field,IRGetELT) and get_field.base.reg == "tmp0" and get_field.i.reg == "tmp4"
+    op = stmts[7].val
+    assert isinstance(op,IROperation) and op.op == "*"
 
-    assert isinstance(stmts[8],IRPrint) and stmts[8].v.reg == "tmp5"
+    assert isinstance(stmts[8],IRSetELT) and stmts[8].base.reg == "tmp0" and stmts[8].i.reg == "tmp4" and stmts[8].i2.reg == "tmp5"
 
 def test_cfg_method_blocks():
-    pass
+    ast1 = Program([
+        Class("hello",[],[
+            Method("world",["a"],[],[
+                PrintStatement(NumExpression(7)),
+                PrintStatement(NumExpression(5))
+                ])
+            ]),
+        Class("foo",[],[
+            Method("bar",["a","b"],[],[
+                PrintStatement(NumExpression(7)),
+                ])
+            ])],
+        [],
+        []
+        )
+    prog = ast1.to_ir_program()
+    assert len(prog.blocks) == 3
+    h = prog.blocks[0]
+    assert len(h.statements) == 2 and h.name == "helloworld" and h.input_names == ["this","a"]
+    f = prog.blocks[1]
+    assert len(f.statements) == 1 and f.name == "foobar" and f.input_names == ["this","a","b"]
+    m = prog.blocks[2]
+    assert len(m.statements) == 0 and m.name == "main"
+
 
 def test_ir_to_str():
-    pass
+    ast1 = Program([
+        Class("hello",[],[
+            Method("world",["a"],[],[
+                PrintStatement(NumExpression(7)),
+                PrintStatement(NumExpression(5))
+                ])
+            ]),
+        Class("foo",[],[
+            Method("bar",["a","b"],[],[
+                PrintStatement(NumExpression(7)),
+                ])
+            ])],
+        [],
+        []
+        )
+    prog = ast1.to_ir_program()
+    print(prog)
 
-def test_cfg_to_ast():
+    for prg in [nothing, optimal, first_example, simple_stack, complex_stack]:
+        print(prg)
+        tree = Parser(Tokenizer(prg)).parse_program()
+        print(tree.to_ir_program())
+
+
+def test_cfg_to_ssa():
     ast1 = Program([],[],[]) #Make this something where we continously assign to the same field
     ir = ast1.to_ir_program()
     ir.to_ssa()

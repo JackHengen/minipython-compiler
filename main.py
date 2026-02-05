@@ -1,4 +1,5 @@
 import argparse
+import sys
 from enum import Enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -201,22 +202,42 @@ class IRControlTransfer(ABC):
 @dataclass
 class IRVar(IRExpression):
     reg:str
+    def __str__(self):
+        return f"%{self.reg}"
 
 
 @dataclass
 class IRConst(IRExpression):
     n:int
+    def __str__(self):
+        return f"{self.n}"
 
 @dataclass
 class IRArray:
     vals:list[Union[str,IRConst]]
     name:str
+    def __str__(self):
+        s = f"global array {self.name}: {{"
+        
+        start = True
+        if self.vals:
+            s+=" "
+            for val in self.vals:
+                if start:
+                    start = False
+                else:
+                    s += ", "
+                s += f"{val}"
+            s+=" "
+        s+="}"
+        return s
 
 @dataclass
 class IRBasicBlock:
     name:str
     statements:list[IRStatement]
     ctl_trans:IRControlTransfer
+    input_names:list[str]
 
     def add_statement(self,stmt:IRStatement):
         self.statements.append(stmt)
@@ -224,9 +245,29 @@ class IRBasicBlock:
     def add_ctl_trans(self,trans:IRControlTransfer):
         self.ctl_trans=trans
 
+    def __str__(self):
+        s = f"{self.name}"
+        if self.input_names:
+            s+="("
+            start = True
+            for i in self.input_names:
+                if start:
+                    start = False
+                else:
+                    s+=", "
+                s+=i
+            s+=")"
+        s+=":\n"
+        for stmt in self.statements:
+            s+=f"{stmt}\n"
+        s+=f"{self.ctl_trans}"
+        return s
+
 @dataclass
 class IRBlockName:
     name:str
+    def __str__(self):
+        return f"@{self.name}"
 
 NONGLOBALS = Union[IRVar,IRConst]
 GLOBALS = Union[NONGLOBALS,IRBlockName]
@@ -236,68 +277,122 @@ class IROperation(IRExpression):
     l:NONGLOBALS
     op:str
     r:NONGLOBALS
+    def __str__(self):
+        return f"{self.l} {self.op} {self.r}"
+
+    def calculate(self):
+        if isinstance(self.l,IRConst) and isinstance(self.r,IRConst):
+            match self.op:
+                case "+":
+                    return self.l.n + self.r.n
+                case "-":
+                    return self.l.n - self.r.n
+                case "/":
+                    return self.l.n // self.r.n
+                case "*":
+                    return self.l.n * self.r.n
+                case ">":
+                    return int(self.l.n > self.r.n)
+                case "<":
+                    return int(self.l.n < self.r.n)
+                case "==":
+                    return int(self.l.n == self.r.n)
+                case _:
+                    return None
 
 @dataclass
 class IRCall(IRExpression):
     c:IRVar
     r:IRVar
     args:list[NONGLOBALS]
+    def __str__(self):
+        s = f"call({self.c}, {self.r}"
+        for a in self.args:
+            s+= f", {a}"
+        s+=")"
+        return s
 
 @dataclass
 class IRPhi(IRExpression):
     block_names:list[str]
     vars:list[IRVar]
+    def __str__(self):
+        pass
 
 @dataclass
 class IRAlloc(IRExpression):
     n:IRConst
+    def __str__(self):
+        return f"alloc({self.n})"
+
 
 @dataclass
 class IRGetELT(IRExpression):
     base:IRVar
     i:NONGLOBALS
+    def __str__(self):
+        return f"getelt({self.base}, {self.i})"
 
 @dataclass
 class IRLoad(IRExpression):
     base:IRVar
+    def __str__(self):
+        return f"load({self.base})"
 
 @dataclass
 class IRStore(IRStatement):
     base:IRVar
     i:GLOBALS
+    def __str__(self):
+        return f"store({self.base}, {self.i})"
 
 @dataclass
 class IRSetELT(IRStatement):
     base:IRVar
     i:GLOBALS
     i2:GLOBALS
+    def __str__(self):
+        return f"setelt({self.base}, {self.i}, {self.i2})"
 
 @dataclass
 class IRPrint(IRStatement):
     v:NONGLOBALS
+    def __str__(self):
+        return f"print({self.v})"
 
 @dataclass
 class IRAssign(IRStatement):
     v:IRVar
     val:IRExpression
+    def __str__(self):
+        return f"{self.v} = {self.val}"
 
 @dataclass
 class IRIf(IRControlTransfer):
     v:IRVar
     b_true:str
     b_false:str
+    def __str__(self):
+        return f"if {self.v} then {self.b_true} else {self.b_false}"
 
 @dataclass
 class IRJump(IRControlTransfer):
     b:str
+    def __str__(self):
+        return f"jump {self.b}"
 
 @dataclass
 class IRRet(IRControlTransfer):
     v:NONGLOBALS
+    def __str__(self):
+        return f"ret {self.v}"
 
 @dataclass
 class IRFail(IRControlTransfer):
     m:str  # For the moment who knows
+    def __str__(self):
+        pass
+
 
 @dataclass
 class IRProgram:
@@ -309,8 +404,10 @@ class IRProgram:
     curr_block:IRBasicBlock = None
     tmp_count:int = 0
 
-    def add_block(self,block_name):
-        self.curr_block = IRBasicBlock(block_name,[],[])
+    def add_block(self,block_name:str,args:list=None):
+        if args is None:
+            args = []
+        self.curr_block = IRBasicBlock(block_name,[],[],args)
         self.blocks.append(self.curr_block)
         return self.curr_block
 
@@ -330,18 +427,44 @@ class IRProgram:
     def add_ctl_tsf(self,ctl_tsf:IRControlTransfer):
         self.curr_block.add_ctl_trans(ctl_tsf)
 
+    def __str__(self):
+        s = "data:\n"
+        order = [item for pair in zip(self.vtbls,self.field_maps) for item in pair]
+        for arr in order:
+            s+=f"{arr}\n"
+        s += "code:\n\n"
+        for b in self.blocks:
+            if b.input_names or b.name == "main":
+                s+="\n"
+            s+= f"{b}\n"
+        return s
+
     def to_ssa(self):
         pass
+
+    def pre_eval_opt(self):
+        for block in self.blocks:
+            for i,stmt in enumerate(block.statements):
+                if isinstance(stmt,IRAssign):
+                    if isinstance(stmt.val, IROperation):
+                        const = stmt.val.calculate()
+                        if const is not None:
+                            stmt.val = IRConst(const)
+
 
 class ASTNode(ABC):
     # to_ir()
     pass
 
 class Statement(ASTNode):
-    pass
+    @abstractmethod
+    def to_ir(self,prog:IRProgram):
+        pass
 
 class Expression(ASTNode):
-    pass
+    @abstractmethod
+    def to_ir(self,prog:IRProgram) -> IRExpression:
+        pass
 
 @dataclass
 class Method(ASTNode):
@@ -363,8 +486,10 @@ class Class(ASTNode):
 
     def to_ir(self,prog:IRProgram):
         for m in self.methods:
-            prog.add_block(self.class_name+m.method_name)
+            prog.add_block(self.class_name+m.method_name,["this"]+m.args)
             m.to_ir(prog)
+            if not prog.curr_block.ctl_trans:
+                prog.add_ctl_tsf(IRRet(IRConst(0)))
 
 
 
@@ -394,7 +519,6 @@ class Program(ASTNode):
         vtbls = []
         class_field_maps = []
         for c in self.classes:
-
             counter = 2  # first field offset
             class_map = []
             for i in range(len(field_map)):
@@ -423,6 +547,8 @@ class Program(ASTNode):
         prog.add_block("main")
         for stmt in self.statements:
             stmt.to_ir(prog)
+        if not prog.curr_block.ctl_trans:
+            prog.add_ctl_tsf(IRRet(IRConst(0)))
 
         return prog
 
@@ -542,17 +668,37 @@ class AssignVarStatement(Statement):
     val:Expression
     def to_ir(self,prog:IRProgram):
         expr = self.val.to_ir(prog)
-        s = IRAssign(IRVar(self.var_name),expr)
-        prog.add_stmt(s)
+        if self.var_name == "_":
+            prog.mk_tmp(expr)
+        else:
+            s = IRAssign(IRVar(self.var_name),expr) 
+            prog.add_stmt(s)
 
 
 @dataclass
 class AssignFieldStatement(Statement):
-    class_name:str
+    obj_expr:Expression
     field_name:str
     val:Expression
     def to_ir(self,prog:IRProgram):
-        pass
+        obj_expr = self.obj_expr.to_ir(prog)
+        if not isinstance(obj_expr,IRVar):
+            obj_expr = prog.mk_tmp(obj_expr)
+
+        addr = prog.mk_tmp(IROperation(obj_expr,"+",IRConst(8)))
+
+        load = prog.mk_tmp(IRLoad(addr)) # load in fields for class
+
+        base = load
+        field_ind = prog.field_name_to_map_index[self.field_name] 
+
+        class_field_ind = prog.mk_tmp(IRGetELT(base,field_ind)) # grab field from fields
+
+        val = self.val.to_ir(prog)
+        if not isinstance(val,IRVar):
+            val = prog.mk_tmp(val)
+
+        prog.add_stmt(IRSetELT(obj_expr,class_field_ind,val))
 
 @dataclass
 class IfStatement(Statement):
@@ -572,12 +718,15 @@ class IfStatement(Statement):
         prog.add_block(trueblock)
         for s in self.statements_true:
             s.to_ir(prog)
-        prog.add_ctl_tsf(IRJump(afterblock))
+        if not prog.curr_block.ctl_trans:
+            prog.add_ctl_tsf(IRJump(afterblock))
 
         prog.add_block(falseblock)
         for s in self.statements_false:
             s.to_ir(prog)
-        prog.add_ctl_tsf(IRJump(afterblock))
+        if not prog.curr_block.ctl_trans:
+            prog.add_ctl_tsf(IRJump(afterblock))
+
         prog.add_block(afterblock)
 
 @dataclass
@@ -612,7 +761,7 @@ class WhileStatement(Statement):
         prog.add_block(condblock)
         expr = self.condition.to_ir(prog)
         if not isinstance(expr,IRVar):
-            expr = mk_tmp(expr)
+            expr = prog.mk_tmp(expr)
         
         prog.add_ctl_tsf(IRIf(expr,trueblock,falseblock))
         prog.add_block(trueblock)
@@ -631,7 +780,7 @@ class ReturnStatement(Statement):
             stmt = IRRet(expr)
         else:
             stmt = IRRet(prog.mk_tmp(expr))
-        prog.add_stmt(stmt)
+        prog.add_ctl_tsf(stmt)
 
 @dataclass
 class PrintStatement(Statement):
@@ -746,8 +895,8 @@ class Parser:
                 _, expr = self.parse(TokenType.EQUAL,Expression)
                 return AssignVarStatement(tok.lexeme,expr)
             case TokenType.EXCLAM:
-                cls, _, field_name, _, expr = self.parse([TokenType.IDENTIFIER,TokenType.THIS],TokenType.DOT,TokenType.IDENTIFIER,TokenType.EQUAL,Expression)
-                return AssignFieldStatement(cls,field_name,expr)
+                obj, _, field_name, _, expr = self.parse(Expression,TokenType.DOT,TokenType.IDENTIFIER,TokenType.EQUAL,Expression)
+                return AssignFieldStatement(obj,field_name,expr)
             case TokenType.IF:
                 expr, stmts_if = parse_conditional_block()
                 _,_,_,s,_ = self.parse(TokenType.ELSE,TokenType.LCBRAC,TokenType.NEWLINE,Statement,TokenType.NEWLINE)
@@ -763,18 +912,15 @@ class Parser:
             case TokenType.PRINT:
                 _, expr, _ = self.parse(TokenType.LPAREN,Expression,TokenType.RPAREN)
                 return PrintStatement(expr)
-        raise Exception(f"how did we get here: {tok}")
+        self.parse_error(f"Incorrect token for start of statement: {tok}")
 
     def parse_identifier_list(self):
         identifiers = []
         if self.t.peek().type == TokenType.IDENTIFIER:
-            identifiers.append(self.t.get_next())
+            identifiers.append(self.parse(TokenType.IDENTIFIER)[0])
             while(self.t.peek().type == TokenType.COMMA):
                 self.t.get_next()
-                name = self.t.get_next()
-                if name.type != TokenType.IDENTIFIER:
-                    raise SyntaxError("identifier list isn't formatted correctly")
-                identifiers.append(name.lexeme)
+                identifiers.append(self.parse(TokenType.IDENTIFIER)[0])
         return identifiers
 
 
@@ -819,40 +965,75 @@ class Parser:
 
 
 
+#TODO
 # change order of args in IRPROG
-# to string methods
-# ssa
-# Peephole optimization
+# validate things like never ending loops
+# tests for evaluation right now i just eyeball it
+# validate operators once i find out which are permitted according to the ir
+# should we be validating if methods exist or fields exist or vars exist?
+# change the jumping to a block to be a literal reference to a block and no the name, then make it so the ctl_tsf
+# goes into the block and gets the name when its printed, we will need easy traversal for ssa
+
+# ssa AND phi to str
+# tagging numbers
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MiniPython Compiler")
-    input_group = parser.add_mutually_exclusive_group(required=True)
+    parser.add_argument("file", nargs="?", help="Input file (default if --str/--stdin) not set manually")
+    input_group = parser.add_mutually_exclusive_group(required=False)
 
-    input_group.add_argument("-f","--file")
-    input_group.add_argument("-s","--str","--string")
+    input_group.add_argument("--str","--string",help="Input provided as arg through commandline", action='store_true')
+    input_group.add_argument("--stdin",help="Input provided through stdin", action='store_true')
 
     stage_group = parser.add_mutually_exclusive_group()
-    stage_group.add_argument("-t","--tokenize",action='store_true')
-    stage_group.add_argument("-p","--parse",action='store_true')
-    stage_group.add_argument("-a","--ast",action='store_true')
-    stage_group.add_argument("-c","--cfg","--noopt",action='store_true')
-    stage_group.add_argument("-o","--opt","--optimize","--optimization",action='store_true')
+    stage_group.add_argument("-t","--tokenize", help='Execute through tokenize stage', action='store_true')
+    stage_group.add_argument("-p","--parse",help="Execute through parse stage",action='store_true')
+    stage_group.add_argument("-c","-noopt","--noopt","--cfg",help="Execute through IR cfg stage",action='store_true')
+    stage_group.add_argument("-o","--opt","--optimize","--optimization",help="Execute through IR optimization stage",action='store_true')
+    stage_group.add_argument("-s","--ssa",help="Execute through IR ssa stage",action="store_true")
     args = parser.parse_args()
 
-    if args.file:
+
+    if not any([args.file, args.str, args.stdin]):
+        parser.error("Must provide input: filename, --str, or --stdin")
+
+    if not any([args.tokenize, args.parse, args.noopt, args.ssa]):
+        args.opt = True
+    
+    if args.str:
+        inp = args.str
+    elif args.stdin:
+        inp = sys.stdin.read()
+    else:
         with open(args.file) as f:
             inp = f.read()
-    elif args.str:
-        inp = args.str
 
-    if args.tokenize or args.parse:
-        t = Tokenizer(inp)
-        toks = t.tokenize()
+    t = Tokenizer(inp)
+    toks = t.tokenize()
+    if args.tokenize:
         print(toks)
+        sys.exit()
 
+    p = Parser(t)
+    parse_tree = p.parse_program()
     if args.parse:
-        p = Parser(t)
-        parse_tree = p.parse_expr()
         print(parse_tree)
-        # use objgraph
+        sys.exit()
+
+    prog = parse_tree.to_ir_program()
+    if args.noopt:
+        print(prog)
+        sys.exit()
+
+    prog.pre_eval_opt()
+    if args.opt:
+        print(prog)
+        sys.exit()
+
+    prog.to_ssa()
+    if args.ssa:
+        print("not implemented yet")
+        sys.exit()
+        print(prog)
+
