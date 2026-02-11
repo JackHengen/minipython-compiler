@@ -612,9 +612,9 @@ def test_cfg_if_only():
     assert len(before.statements) == 1 #assignment to tmp0
 
     assert isinstance(before.statements[0],IRAssign) and before.statements[0].v.reg == "tmp2" and before.statements[0].val.op == "+"
-    assert isinstance(before.ctl_trans,IRIf) and before.ctl_trans.v.reg == "tmp2" and "true" in before.ctl_trans.b_true and "after" in before.ctl_trans.b_false
+    assert isinstance(before.ctl_tsf,IRIf) and before.ctl_tsf.v.reg == "tmp2" and "true" in before.ctl_tsf.b_true.name and "after" in before.ctl_tsf.b_false.name
     assert len(true.statements) == 1
-    assert isinstance(true.ctl_trans,IRJump) and "after" in true.ctl_trans.b
+    assert isinstance(true.ctl_tsf,IRJump) and "after" in true.ctl_tsf.b_after.name
     assert len(after.statements) == 0
 
 def test_cfg_if():
@@ -628,11 +628,11 @@ def test_cfg_if():
     after = ir1.blocks[3]
     
     assert len(before.statements) == 0
-    assert isinstance(before.ctl_trans,IRIf) and "false" in before.ctl_trans.b_false and "true" in before.ctl_trans.b_true and before.ctl_trans.v.reg == "x"
+    assert isinstance(before.ctl_tsf,IRIf) and "false" in before.ctl_tsf.b_false.name and "true" in before.ctl_tsf.b_true.name and before.ctl_tsf.v.reg == "x"
     assert len(true.statements) == 1
-    assert isinstance(true.ctl_trans,IRJump) and "after" in true.ctl_trans.b
+    assert isinstance(true.ctl_tsf,IRJump) and "after" in true.ctl_tsf.b_after.name
     assert len(false.statements) == 1
-    assert isinstance(false.ctl_trans,IRJump) and "after" in false.ctl_trans.b
+    assert isinstance(false.ctl_tsf,IRJump) and "after" in false.ctl_tsf.b_after.name
     assert len(after.statements) == 0
 
 def test_cfg_print():
@@ -662,11 +662,11 @@ def test_cfg_while():
     false = ir1.blocks[3]
     
     assert len(before.statements) == 1
-    assert isinstance(before.ctl_trans,IRJump) and "cond" in before.ctl_trans.b
+    assert isinstance(before.ctl_tsf,IRJump) and "cond" in before.ctl_tsf.b_after.name
     assert len(cond.statements) == 4
-    assert isinstance(cond.ctl_trans,IRIf) and "false" in cond.ctl_trans.b_false and "true" in  cond.ctl_trans.b_true
+    assert isinstance(cond.ctl_tsf,IRIf) and "after" in cond.ctl_tsf.b_false.name and "true" in cond.ctl_tsf.b_true.name
     assert len(true.statements) == 2
-    assert isinstance(true.ctl_trans,IRJump) and "cond" in true.ctl_trans.b
+    assert isinstance(true.ctl_tsf,IRJump) and "cond" in true.ctl_tsf.b_after.name
     assert len(false.statements) == 3
 
 def test_cfg_return():
@@ -675,7 +675,7 @@ def test_cfg_return():
     block = ir1.blocks[0]
     assert len(block.statements) == 0
     assert len(ir1.blocks) == 1
-    assert isinstance(block.ctl_trans, IRRet) and block.ctl_trans.v.n == 9
+    assert isinstance(block.ctl_tsf, IRRet) and block.ctl_tsf.v.n == 9
 
     ast2 = Program([],[],[ReturnStatement(ParenExpression(NumExpression(2),"+",ParenExpression(NumExpression(3),"+",NumExpression(4))))])
     ir2 = ast2.to_ir_program()
@@ -684,7 +684,7 @@ def test_cfg_return():
     stmts = block.statements
     assert isinstance(stmts[0],IRAssign) and stmts[0].v.reg == "tmp0" and stmts[0].val.op == "+"
     assert isinstance(stmts[1],IRAssign) and stmts[1].v.reg == "tmp1" and stmts[1].val.op == "+"
-    assert isinstance(block.ctl_trans,IRRet) and block.ctl_trans.v.reg == "tmp1"
+    assert isinstance(block.ctl_tsf,IRRet) and block.ctl_tsf.v.reg == "tmp1"
 
 def test_cfg_this_expr():
     ast1 = Program([],[],[AssignVarStatement("x",ThisExpression())])
@@ -886,11 +886,105 @@ def test_ir_to_str():
         tree = Parser(Tokenizer(prg)).parse_program()
         print(tree.to_ir_program())
 
+def test_successor_predecessor():
+    main = [IfStatement(NumExpression(1),
+                        [
+                            IfStatement(NumExpression(1),
+                                        [
+                                            PrintStatement(NumExpression(2))
+                                        ],
+                                        [
+                                            PrintStatement(NumExpression(3))
+                                        ])
+                        ],
+                        [
+                            PrintStatement(NumExpression(4))
+                        ]),
+            PrintStatement(NumExpression(5))
+            ]
+    prog = Program([],[],main)
+    ir = prog.to_ir_program()
+    main = ir.blocks[0]
+    t = main.ctl_tsf.b_true
+    f = main.ctl_tsf.b_false
+
+    t2 = t.ctl_tsf.b_true
+    f2 = t.ctl_tsf.b_false
+
+    after = f.ctl_tsf.b_after
+    print(ir)
+    for b in after.predecessors:
+        print(b.name)
+
+    assert len(main.successors) == 2
+    assert t in main.successors and f in main.successors and main in t.predecessors and main in f.predecessors
+    assert len(after.predecessors) == 2
+
+def test_dominators():
+    a = IRBasicBlock("after",[],IRRet(0),[])
+    t2 = IRBasicBlock("t2",[],IRJump(a),[])
+    t = IRBasicBlock("t",[],IRJump(t2),[])
+    af = IRBasicBlock("af",[],IRJump(a),[])
+    ft = IRBasicBlock("ft",[],IRJump(af),[])
+    ff = IRBasicBlock("ff",[],IRJump(af),[])
+    f = IRBasicBlock("f",[],IRIf(IRVar("bye"),ft,ff),[])
+    b=IRBasicBlock("before",[],IRIf(IRVar("hi"),t,f),[])
+    
+    prog = IRProgram([],[],dict(),dict(),[b,t,f,a,t2,ff,ft,af])
+    doms = iterative_dom(prog)
+
+    assert doms[b] == {b}
+    assert doms[t] == {b,t}
+    assert doms[t2] == {b,t,t2}
+    assert doms[f] == {b,f}
+    assert doms[ft] == {b,f,ft}
+    assert doms[ff] == {b,f,ff}
+    assert doms[af] == {b,f,af}
+    assert doms[a] == {b,a}
+    
+def test_idom():
+    a = IRBasicBlock("after",[],IRRet(0),[])
+    t2 = IRBasicBlock("t2",[],IRJump(a),[])
+    t = IRBasicBlock("t",[],IRJump(t2),[])
+    af = IRBasicBlock("af",[],IRJump(a),[])
+    ft = IRBasicBlock("ft",[],IRJump(af),[])
+    ff = IRBasicBlock("ff",[],IRJump(af),[])
+    f = IRBasicBlock("f",[],IRIf(IRVar("bye"),ft,ff),[])
+    b=IRBasicBlock("before",[],IRIf(IRVar("hi"),t,f),[])
+    
+    prog = IRProgram([],[],dict(),dict(),[b,t,f,a,t2,ff,ft,af])
+    i = idom(iterative_dom(prog))
+
+    assert i[b] == None
+    assert i[t] == b
+    assert i[t2] == t
+    assert i[f] == b
+    assert i[ft] == f
+    assert i[ff] == f
+    assert i[af] == f
+    assert i[a] == b
+
+def test_df():
+    a = IRBasicBlock("after",[],IRRet(0),[])
+    t2 = IRBasicBlock("t2",[],IRJump(a),[])
+    fboth = IRBasicBlock("fboth",[],IRRet(0),[])
+    t = IRBasicBlock("t",[],IRIf(IRVar("bye"),t2,fboth),[])
+    f = IRBasicBlock("f",[],IRIf(IRVar("bye"),a,fboth),[])
+    b=IRBasicBlock("before",[],IRIf(IRVar("hi"),t,f),[])
+    
+    prog = IRProgram([],[],dict(),dict(),[a,t2,fboth,t,f,b])
+    df = dom_frontier(prog)
+
+    assert df[b] == set()
+    assert df[t] == {a,fboth}
+    assert df[f] == {a,fboth}
+    assert df[fboth] == set()
+    assert df[t2] == {a}
+    assert df[a] == set()
 
 def test_cfg_to_ssa():
     ast1 = Program([],[],[]) #Make this something where we continously assign to the same field
     ir = ast1.to_ir_program()
-    ir.to_ssa()
 
     seen = set()
     for b in ir.blocks:
@@ -899,7 +993,3 @@ def test_cfg_to_ssa():
                 assigned = s.v.reg
                 assert assigned not in seen
                 seen.add(assigned)
-
-
-    
-

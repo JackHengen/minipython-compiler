@@ -1,3 +1,4 @@
+import re
 import argparse
 import sys
 from enum import Enum
@@ -197,7 +198,12 @@ class IRExpression(ABC):
     pass
 
 class IRControlTransfer(ABC):
-    pass
+    b_before:"IRBasicBlock" = None
+
+    @abstractmethod
+    def successors() -> tuple["IRBasicBlock"]:
+        pass
+
 
 @dataclass
 class IRVar(IRExpression):
@@ -218,7 +224,6 @@ class IRArray:
     name:str
     def __str__(self):
         s = f"global array {self.name}: {{"
-        
         start = True
         if self.vals:
             s+=" "
@@ -232,18 +237,37 @@ class IRArray:
         s+="}"
         return s
 
-@dataclass
+@dataclass(eq=False)
 class IRBasicBlock:
     name:str
     statements:list[IRStatement]
-    ctl_trans:IRControlTransfer
+    ctl_tsf:IRControlTransfer
     input_names:list[str]
+    successors:list["IRBasicBlock"] = field(default_factory=list)
+    predecessors:list["IRBasicBlock"] = field(default_factory=list)
+    phis:list["IRPhi"] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.ctl_tsf:
+            self.add_ctl_tsf(self.ctl_tsf)
 
     def add_statement(self,stmt:IRStatement):
         self.statements.append(stmt)
 
-    def add_ctl_trans(self,trans:IRControlTransfer):
-        self.ctl_trans=trans
+    def add_ctl_tsf(self,trans:IRControlTransfer):
+        trans.b_before = self
+        self.ctl_tsf=trans
+        for s in self.ctl_tsf.successors():
+            s.predecessors.append(self)
+            self.successors.append(s)
+
+    def __eq__(self, other):
+        if not isinstance(other, IRBasicBlock):
+            return NotImplemented
+        return self.name == other.name
+
+    def __hash__(self):
+        return hash(self.name)
 
     def __str__(self):
         s = f"{self.name}"
@@ -258,9 +282,11 @@ class IRBasicBlock:
                 s+=i
             s+=")"
         s+=":\n"
+        for phi in self.phis:
+            s==f"{phi}\n"
         for stmt in self.statements:
             s+=f"{stmt}\n"
-        s+=f"{self.ctl_trans}"
+        s+=f"{self.ctl_tsf}"
         return s
 
 @dataclass
@@ -313,11 +339,25 @@ class IRCall(IRExpression):
         return s
 
 @dataclass
-class IRPhi(IRExpression):
-    block_names:list[str]
-    vars:list[IRVar]
+class IRPhi(IRStatement):
+    orig_name:str
+    assign_var:IRVar
+    names:dict[IRVar,IRBasicBlock]=field(default_factory=dict)
+
+    def add(self,var:IRVar,block:IRBasicBlock):
+        self.names[var]=block
+
     def __str__(self):
-        pass
+        s = f'{self.assign_var} = phi('
+        start = True
+        for var,block in self.names:
+            if start:
+                start = False
+            else:
+                s+=", "
+            s+=f"{block}, {var}"
+        s += ')'
+        return s
 
 @dataclass
 class IRAlloc(IRExpression):
@@ -370,20 +410,26 @@ class IRAssign(IRStatement):
 @dataclass
 class IRIf(IRControlTransfer):
     v:IRVar
-    b_true:str
-    b_false:str
+    b_true:IRBasicBlock
+    b_false:IRBasicBlock
+    def successors(self):
+        return (self.b_true,self.b_false)
     def __str__(self):
-        return f"if {self.v} then {self.b_true} else {self.b_false}"
+        return f"if {self.v} then {self.b_true.name} else {self.b_false.name}"
 
 @dataclass
 class IRJump(IRControlTransfer):
-    b:str
+    b_after:IRBasicBlock
+    def successors(self):
+        return (self.b_after,)
     def __str__(self):
-        return f"jump {self.b}"
+        return f"jump {self.b_after.name}"
 
 @dataclass
 class IRRet(IRControlTransfer):
     v:NONGLOBALS
+    def successors(self):
+        return ()
     def __str__(self):
         return f"ret {self.v}"
 
@@ -392,7 +438,6 @@ class IRFail(IRControlTransfer):
     m:str  # For the moment who knows
     def __str__(self):
         pass
-
 
 @dataclass
 class IRProgram:
@@ -425,7 +470,7 @@ class IRProgram:
         self.curr_block.add_statement(stmt)
 
     def add_ctl_tsf(self,ctl_tsf:IRControlTransfer):
-        self.curr_block.add_ctl_trans(ctl_tsf)
+        self.curr_block.add_ctl_tsf(ctl_tsf)
 
     def __str__(self):
         s = "data:\n"
@@ -439,17 +484,7 @@ class IRProgram:
             s+= f"{b}\n"
         return s
 
-    def to_ssa(self):
-        pass
 
-    def pre_eval_opt(self):
-        for block in self.blocks:
-            for i,stmt in enumerate(block.statements):
-                if isinstance(stmt,IRAssign):
-                    if isinstance(stmt.val, IROperation):
-                        const = stmt.val.calculate()
-                        if const is not None:
-                            stmt.val = IRConst(const)
 
 
 class ASTNode(ABC):
@@ -488,7 +523,7 @@ class Class(ASTNode):
         for m in self.methods:
             prog.add_block(self.class_name+m.method_name,["this"]+m.args)
             m.to_ir(prog)
-            if not prog.curr_block.ctl_trans:
+            if not prog.curr_block.ctl_tsf:
                 prog.add_ctl_tsf(IRRet(IRConst(0)))
 
 
@@ -526,7 +561,7 @@ class Program(ASTNode):
 
             vtbl = []
             for i in range(len(mthd_map)):
-                vtbl.append(0) 
+                vtbl.append(0)
 
             for f in c.fields:
                 class_map[field_map[f]] = counter
@@ -547,7 +582,7 @@ class Program(ASTNode):
         prog.add_block("main")
         for stmt in self.statements:
             stmt.to_ir(prog)
-        if not prog.curr_block.ctl_trans:
+        if not prog.curr_block.ctl_tsf:
             prog.add_ctl_tsf(IRRet(IRConst(0)))
 
         return prog
@@ -706,70 +741,97 @@ class IfStatement(Statement):
     statements_true:list[Statement]
     statements_false:list[Statement]
     def to_ir(self,prog:IRProgram):
-        trueblock = f"true{prog.use_tmp()}"
-        falseblock = f"false{prog.use_tmp()}"
-        afterblock = f"after{prog.use_tmp()}"
+        true = f"true{prog.use_tmp()}"
+        false = f"false{prog.use_tmp()}"
+        after = f"after{prog.use_tmp()}"
 
         expr = self.condition.to_ir(prog)
         if not isinstance(expr,IRVar):
             expr = prog.mk_tmp(expr)
 
-        prog.add_ctl_tsf(IRIf(expr,trueblock,falseblock))
-        prog.add_block(trueblock)
+        currblock = prog.curr_block
+
+        prog.add_block(true)
+        trueblock = prog.curr_block
         for s in self.statements_true:
             s.to_ir(prog)
-        if not prog.curr_block.ctl_trans:
-            prog.add_ctl_tsf(IRJump(afterblock))
+        endtrueblock = prog.curr_block
 
-        prog.add_block(falseblock)
+        prog.add_block(false)
+        falseblock = prog.curr_block
         for s in self.statements_false:
             s.to_ir(prog)
-        if not prog.curr_block.ctl_trans:
-            prog.add_ctl_tsf(IRJump(afterblock))
+        endfalseblock = prog.curr_block
 
-        prog.add_block(afterblock)
+        prog.add_block(after)
+        afterblock = prog.curr_block
+
+        currblock.add_ctl_tsf(IRIf(expr,trueblock,falseblock))
+        if not endtrueblock.ctl_tsf:
+            endtrueblock.add_ctl_tsf(IRJump(afterblock))
+        if not endfalseblock.ctl_tsf:
+            endfalseblock.add_ctl_tsf(IRJump(afterblock))
 
 @dataclass
 class IfOnlyStatement(Statement):
     condition:Expression
     statements:list[Statement]
     def to_ir(self,prog:IRProgram):
-        trueblock = f"true{prog.use_tmp()}"
-        afterblock = f"after{prog.use_tmp()}"
+        true = f"true{prog.use_tmp()}"
+        after = f"after{prog.use_tmp()}"
 
         expr = self.condition.to_ir(prog)
         if not isinstance(expr,IRVar):
             expr = prog.mk_tmp(expr)
 
-        prog.add_ctl_tsf(IRIf(expr,trueblock,afterblock))
-        prog.add_block(trueblock)
+        currblock = prog.curr_block
+
+        prog.add_block(true)
+        trueblock = prog.curr_block
         for s in self.statements:
             s.to_ir(prog)
-        prog.add_ctl_tsf(IRJump(afterblock))
-        prog.add_block(afterblock)
+        endtrueblock = prog.curr_block
+
+        prog.add_block(after)
+        afterblock = prog.curr_block
+
+        currblock.add_ctl_tsf(IRIf(expr,trueblock,afterblock))
+        if not endtrueblock.ctl_tsf: #theoretically the only thing this should not be true on is a return
+            endtrueblock.add_ctl_tsf(IRJump(afterblock))
 
 @dataclass
 class WhileStatement(Statement):
     condition:Expression
     statements:list[Statement]
     def to_ir(self,prog:IRProgram):
-        condblock = f"cond{prog.use_tmp()}"
-        trueblock = f"true{prog.use_tmp()}"
-        falseblock = f"false{prog.use_tmp()}"
+        cond = f"cond{prog.use_tmp()}"
+        true = f"true{prog.use_tmp()}"
+        after = f"after{prog.use_tmp()}"
 
-        prog.add_ctl_tsf(IRJump(condblock))
-        prog.add_block(condblock)
+        currblock = prog.curr_block
+        prog.add_block(cond)
+        condblock = prog.curr_block
+
+        currblock.add_ctl_tsf(IRJump(condblock))
+
         expr = self.condition.to_ir(prog)
         if not isinstance(expr,IRVar):
             expr = prog.mk_tmp(expr)
-        
-        prog.add_ctl_tsf(IRIf(expr,trueblock,falseblock))
-        prog.add_block(trueblock)
+
+        prog.add_block(true)
+        trueblock = prog.curr_block
         for s in self.statements:
             s.to_ir(prog)
-        prog.add_ctl_tsf(IRJump(condblock))
-        prog.add_block(falseblock)
+        endtrueblock = prog.curr_block
+
+        if not endtrueblock.ctl_tsf:
+            endtrueblock.add_ctl_tsf(IRJump(condblock))
         
+
+        prog.add_block(after)
+        afterblock = prog.curr_block
+
+        condblock.add_ctl_tsf(IRIf(expr,trueblock,afterblock))
 
 @dataclass
 class ReturnStatement(Statement):
@@ -963,16 +1025,124 @@ class Parser:
             stmts.append(stmt)
         return Program(cls,locs,stmts)
 
+def pre_eval_opt(prog:IRProgram):
+    for block in prog.blocks:
+        for i,stmt in enumerate(block.statements):
+            if isinstance(stmt,IRAssign):
+                if isinstance(stmt.val, IROperation):
+                    const = stmt.val.calculate()
+                    if const is not None:
+                        stmt.val = IRConst(const)
+
+def iterative_dom(prog:IRProgram) -> dict[IRBasicBlock,list[IRBasicBlock]]:
+    dom = {prog.blocks[0]:{prog.blocks[0]}}
+    for b in prog.blocks[1:]:
+        dom[b] = {b for b in prog.blocks}
+
+    changed = True
+    while changed:
+        changed = False
+        for b in prog.blocks:
+            if b.predecessors:
+                bs = {b for b in prog.blocks}
+                for bb in b.predecessors:
+                    bs &= dom[bb]
+            else:
+                bs = set()
+            tmp = {b} | bs
+            if tmp != dom[b]:
+                dom[b] = tmp
+                changed = True
+    return dom
+
+def idom(domsets:dict[IRBasicBlock,set[IRBasicBlock]]) -> dict[IRBasicBlock,IRBasicBlock]:
+    idominated={}
+    for b,doms in domsets.items():
+        idominated[b] = None  # for the first one which only dominates itself
+        goal = domsets[b] - {b}
+        for bb in doms:
+            if domsets[bb] == goal:
+                idominated[b] = bb
+                break
+    return idominated
+
+def dom_frontier(prog:IRProgram) -> dict[IRBasicBlock,set[IRBasicBlock]]:
+    df = {b:set() for b in prog.blocks}
+    idominated=idom(iterative_dom(prog))
+    for b in prog.blocks:
+        if len(b.predecessors) > 1:
+            for p in b.predecessors:
+                parent = p
+                while parent != idominated[b]:
+                    df[parent].add(b)
+                    parent = idominated[parent]
+    return df
 
 
-#TODO
+def mk_ssa(prog:IRProgram):
+    df = dom_frontier(prog)
+    globs = set()
+    blocks = {b:set() for b in prog.blocks}
+    for b in prog.blocks:
+        varkill = set()
+        for s in b:
+            if isinstance(s,IRAssign):
+                # var = re.sub("[1234567890]+",'',s.v.reg)
+                varkill.add(s.v)
+                if isinstance(s.val,IROperation):
+                    if isinstance(s.val.l,IRVar):
+                        globs.add(s.val.l)
+                    if isinstance(s.val.r,IRVar):
+                        globs.add(s.val.r)
+                elif isinstance(s.val,IRVar):
+                    globs.add(s.val)
+                blocks[s.v] = blocks[s.v] | b
+
+
+    var_nums = {}
+    for g in globs:
+        worklist = blocks[g]
+        for b in worklist:
+            for d in df[b]:
+                num = var_nums.setdefault(g,0)
+                d.phis.append(IRPhi(s.v,s.v+str(num)))
+                var_nums[g] = num + 1
+                worklist = worklist | d
+
+    var_maps = {}
+    for b in prog.blocks:
+        m = var_maps.setdefault(b,dict())
+        for phi in b.phis:
+            m[phi.orig_name] = (phi.assign_var,b)
+        for s in b.statements:
+            if isinstance(s,IRAssign):
+                num = var_nums.set_default(s.v,0)
+                orig = s.v.reg
+                s.v.reg = s.v.reg + num
+                m[orig] = (s.v.reg,b)
+        for p in b.successors:
+            pm = var_maps.setdefault(p,dict())
+            for orig_name,var_info in m.items():
+                new_name,_ = var_info
+                if orig_name not in pm:
+                    pm[orig_name] = (new_name,b)
+
+    for b in prog.blocks:
+        for phi in b.phis:
+            infos = var_maps[b][phi.orig_name]
+            for name,block in infos:
+                phi.add(name,block)
+
+
+
 # change order of args in IRPROG
 # validate things like never ending loops
+# validate early returns and still more statements
 # tests for evaluation right now i just eyeball it
 # validate operators once i find out which are permitted according to the ir
 # should we be validating if methods exist or fields exist or vars exist?
-# change the jumping to a block to be a literal reference to a block and no the name, then make it so the ctl_tsf
-# goes into the block and gets the name when its printed, we will need easy traversal for ssa
+# regression tests for returns before other stmts working, and not overwriting the blocks control transfers if a while
+# or if or ifonly
 
 # ssa AND phi to str
 # tagging numbers
@@ -1000,7 +1170,7 @@ if __name__ == "__main__":
 
     if not any([args.tokenize, args.parse, args.noopt, args.ssa]):
         args.opt = True
-    
+
     if args.str:
         inp = args.str
     elif args.stdin:
@@ -1026,14 +1196,13 @@ if __name__ == "__main__":
         print(prog)
         sys.exit()
 
-    prog.pre_eval_opt()
+    pre_eval_opt(prog)
     if args.opt:
         print(prog)
         sys.exit()
 
-    prog.to_ssa()
+    mk_ssa(prog)
     if args.ssa:
         print("not implemented yet")
         sys.exit()
         print(prog)
-
