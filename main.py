@@ -208,8 +208,18 @@ class IRControlTransfer(ABC):
 @dataclass
 class IRVar(IRExpression):
     reg:str
+    istmp:bool = False
     def __str__(self):
         return f"%{self.reg}"
+
+    def change_vars(self,var_map:dict[str,str]):
+        if self.istmp:
+            return
+        if self.reg in var_map:
+            self.reg = var_map[self.reg]
+
+    def get_vars(self):
+        return [self]
 
 
 @dataclass
@@ -217,6 +227,12 @@ class IRConst(IRExpression):
     n:int
     def __str__(self):
         return f"{self.n}"
+
+    def change_vars(self,var_map:dict[str,str]):
+        return
+
+    def get_vars(self):
+        return []
 
 @dataclass
 class IRArray:
@@ -245,7 +261,7 @@ class IRBasicBlock:
     input_names:list[str]
     successors:list["IRBasicBlock"] = field(default_factory=list)
     predecessors:list["IRBasicBlock"] = field(default_factory=list)
-    phis:list["IRPhi"] = field(default_factory=dict)
+    phis:list["IRPhi"] = field(default_factory=list)
 
     def __post_init__(self):
         if self.ctl_tsf:
@@ -283,17 +299,23 @@ class IRBasicBlock:
             s+=")"
         s+=":\n"
         for phi in self.phis:
-            s==f"{phi}\n"
+            s+=f"{phi}\n"
         for stmt in self.statements:
             s+=f"{stmt}\n"
         s+=f"{self.ctl_tsf}"
         return s
 
 @dataclass
-class IRBlockName:
+class IRBlockName(IRExpression):
     name:str
     def __str__(self):
         return f"@{self.name}"
+
+    def change_vars(self,var_map:dict[str,str]):
+        return
+
+    def get_vars(self):
+        return []
 
 NONGLOBALS = Union[IRVar,IRConst]
 GLOBALS = Union[NONGLOBALS,IRBlockName]
@@ -326,6 +348,19 @@ class IROperation(IRExpression):
                 case _:
                     return None
 
+    def change_vars(self,var_map:dict[str,str]):
+        if isinstance(self.l,IRVar):
+            if self.l.reg in var_map:
+                self.l.reg = var_map[self.l.reg]
+
+        if isinstance(self.r,IRVar):
+            if self.r.reg in var_map:
+                self.r.reg = var_map[self.r.reg]
+
+    def get_vars(self):
+        return [*self.l.get_vars(),*self.r.get_vars()]
+
+
 @dataclass
 class IRCall(IRExpression):
     c:IRVar
@@ -338,24 +373,39 @@ class IRCall(IRExpression):
         s+=")"
         return s
 
+    def change_vars(self,var_map:dict[str,str]):
+        self.c.change_vars(var_map)
+        self.r.change_vars(var_map)
+        for arg in self.args:
+            arg.change_vars(var_map)
+
+    def get_vars(self):
+        return [*self.c.get_vars(),*self.r.get_vars()]
+
 @dataclass
-class IRPhi(IRStatement):
+class IRPhi:
     orig_name:str
     assign_var:IRVar
-    names:dict[IRVar,IRBasicBlock]=field(default_factory=dict)
+    names:dict[str,IRBasicBlock]=field(default_factory=dict)
 
-    def add(self,var:IRVar,block:IRBasicBlock):
-        self.names[var]=block
+    def add(self,var_name:str,block:IRBasicBlock):
+        self.names[var_name]=block
+
+    def get_block(self,name):
+        if name in self.names:
+            return self.names[name]
+        else:
+            return None
 
     def __str__(self):
         s = f'{self.assign_var} = phi('
         start = True
-        for var,block in self.names:
+        for var,block in self.names.items():
             if start:
                 start = False
             else:
                 s+=", "
-            s+=f"{block}, {var}"
+            s+=f"{block.name}, {IRVar(var)}"
         s += ')'
         return s
 
@@ -365,6 +415,12 @@ class IRAlloc(IRExpression):
     def __str__(self):
         return f"alloc({self.n})"
 
+    def change_vars(self,var_map:dict[str,str]):
+        return
+    
+    def get_vars(self):
+        return []
+
 
 @dataclass
 class IRGetELT(IRExpression):
@@ -373,11 +429,24 @@ class IRGetELT(IRExpression):
     def __str__(self):
         return f"getelt({self.base}, {self.i})"
 
+    def change_vars(self,var_map:dict[str,str]):
+        self.base.change_vars(var_map)
+        self.i.change_vars(var_map)
+
+    def get_vars(self):
+        return [*self.base.get_vars(),*self.i.get_vars()]
+
 @dataclass
 class IRLoad(IRExpression):
     base:IRVar
     def __str__(self):
         return f"load({self.base})"
+    
+    def change_vars(self,var_map:dict[str,str]):
+        self.base.change_vars(var_map)
+
+    def get_vars(self):
+        return self.base.get_vars()
 
 @dataclass
 class IRStore(IRStatement):
@@ -385,6 +454,13 @@ class IRStore(IRStatement):
     i:GLOBALS
     def __str__(self):
         return f"store({self.base}, {self.i})"
+
+    def change_vars(self,var_map:dict[str,str]):
+        self.i.change_vars(var_map)
+        self.base.change_vars(var_map)
+
+    def get_vars(self):
+        return [*self.base.get_vars(),*self.i.get_vars()]
 
 @dataclass
 class IRSetELT(IRStatement):
@@ -394,11 +470,25 @@ class IRSetELT(IRStatement):
     def __str__(self):
         return f"setelt({self.base}, {self.i}, {self.i2})"
 
+    def change_vars(self,var_map:dict[str,str]):
+        self.base.change_vars(var_map)
+        self.i.change_vars(var_map)
+        self.i2.change_vars(var_map)
+
+    def get_vars(self):
+        return [*self.base.get_vars(),*self.i.get_vars(),*self.i2.get_vars()]
+
 @dataclass
 class IRPrint(IRStatement):
     v:NONGLOBALS
     def __str__(self):
         return f"print({self.v})"
+
+    def change_vars(self,var_map:dict[str,str]):
+        self.v.change_vars(var_map)
+
+    def get_vars(self):
+        return self.v.get_vars()
 
 @dataclass
 class IRAssign(IRStatement):
@@ -406,6 +496,12 @@ class IRAssign(IRStatement):
     val:IRExpression
     def __str__(self):
         return f"{self.v} = {self.val}"
+
+    def change_vars(self,var_map:dict[str,str]):
+        self.val.change_vars(var_map)
+
+    def get_vars(self): #DOES NOT INCLUDE THE V TO ASSIGN TO
+        return self.val.get_vars()
 
 @dataclass
 class IRIf(IRControlTransfer):
@@ -417,6 +513,12 @@ class IRIf(IRControlTransfer):
     def __str__(self):
         return f"if {self.v} then {self.b_true.name} else {self.b_false.name}"
 
+    def change_vars(self,var_map:dict[str,str]):
+        self.v.change_vars(var_map)
+
+    def get_vars(self):
+        return self.v.get_vars()
+
 @dataclass
 class IRJump(IRControlTransfer):
     b_after:IRBasicBlock
@@ -425,6 +527,12 @@ class IRJump(IRControlTransfer):
     def __str__(self):
         return f"jump {self.b_after.name}"
 
+    def change_vars(self,var_map:dict[str,str]):
+        return
+
+    def get_vars(self):
+        return []
+
 @dataclass
 class IRRet(IRControlTransfer):
     v:NONGLOBALS
@@ -432,6 +540,12 @@ class IRRet(IRControlTransfer):
         return ()
     def __str__(self):
         return f"ret {self.v}"
+
+    def change_vars(self,var_map:dict[str,str]):
+        self.v.change_vars(var_map)
+
+    def get_vars(self):
+        return self.v.get_vars()
 
 @dataclass
 class IRFail(IRControlTransfer):
@@ -463,7 +577,7 @@ class IRProgram:
 
     def mk_tmp(self,expr:IRExpression):
         tmp = f"tmp{self.use_tmp()}"
-        self.add_stmt(IRAssign(IRVar(tmp),expr))
+        self.add_stmt(IRAssign(IRVar(tmp,True),expr))
         return IRVar(tmp)
 
     def add_stmt(self,stmt:IRStatement):
@@ -483,9 +597,6 @@ class IRProgram:
                 s+="\n"
             s+= f"{b}\n"
         return s
-
-
-
 
 class ASTNode(ABC):
     # to_ir()
@@ -638,7 +749,7 @@ class MethodExpression(Expression):
         
         base = load
         i = prog.mthd_name_to_vtbl_index[self.method_name]
-        getelt = prog.mk_tmp(IRGetELT(base,i))
+        getelt = prog.mk_tmp(IRGetELT(base,IRConst(i)))
 
         return IRCall(getelt,expr,args)
 
@@ -659,9 +770,9 @@ class FieldReadExpression(Expression):
         base = load
         field_ind = prog.field_name_to_map_index[self.field_name] 
 
-        class_field_ind = prog.mk_tmp(IRGetELT(base,field_ind)) # grab field from fields
+        class_field_ind = prog.mk_tmp(IRGetELT(base,IRConst(field_ind))) # grab field from fields
 
-        return IRGetELT(expr,class_field_ind)
+        return IRGetELT(expr,IRConst(class_field_ind))
         
 
 @dataclass
@@ -676,20 +787,15 @@ class NewObjExpression(Expression):
         if not field_map:
             raise NameError(f"No such class {self.class_name}")
 
-        tmp = f"tmp{prog.use_tmp()}"
-        alloc = IRAssign(IRVar(tmp),IRAlloc(2+len(field_map.vals)))
-        addvtbl = IRStore(IRVar(tmp),IRBlockName(f"vtbl{self.class_name}"))
+        alloc = prog.mk_tmp(IRAlloc(2+len(field_map.vals)))
+        prog.add_stmt(IRStore(alloc,IRBlockName(f"vtbl{self.class_name}")))
 
         tmp2 = f"tmp{prog.use_tmp()}"
-        addaddr = IRAssign(IRVar(tmp2),IROperation(IRVar(tmp),"+",IRConst(8)))
-        addfields = IRStore(IRVar(tmp2),IRBlockName(f"fields{self.class_name}")) 
+        addaddr = prog.mk_tmp(IROperation(alloc,"+",IRConst(8)))
+        prog.add_stmt(IRStore(addaddr,IRBlockName(f"fields{self.class_name}")) )
 
-        prog.add_stmt(alloc)
-        prog.add_stmt(addvtbl)
-        prog.add_stmt(addaddr)
-        prog.add_stmt(addfields)
 
-        return IRVar(tmp)
+        return alloc
 
 
 @dataclass
@@ -727,7 +833,7 @@ class AssignFieldStatement(Statement):
         base = load
         field_ind = prog.field_name_to_map_index[self.field_name] 
 
-        class_field_ind = prog.mk_tmp(IRGetELT(base,field_ind)) # grab field from fields
+        class_field_ind = prog.mk_tmp(IRGetELT(base,IRConst(field_ind))) # grab field from fields
 
         val = self.val.to_ir(prog)
         if not isinstance(val,IRVar):
@@ -1082,70 +1188,124 @@ def dom_frontier(prog:IRProgram) -> dict[IRBasicBlock,set[IRBasicBlock]]:
 def mk_ssa(prog:IRProgram):
     df = dom_frontier(prog)
     globs = set()
-    blocks = {b:set() for b in prog.blocks}
+    blocks = {}
     for b in prog.blocks:
         varkill = set()
-        for s in b:
-            if isinstance(s,IRAssign):
-                # var = re.sub("[1234567890]+",'',s.v.reg)
-                varkill.add(s.v)
-                if isinstance(s.val,IROperation):
-                    if isinstance(s.val.l,IRVar):
-                        globs.add(s.val.l)
-                    if isinstance(s.val.r,IRVar):
-                        globs.add(s.val.r)
-                elif isinstance(s.val,IRVar):
-                    globs.add(s.val)
-                blocks[s.v] = blocks[s.v] | b
-
-
-    var_nums = {}
-    for g in globs:
-        worklist = blocks[g]
-        for b in worklist:
-            for d in df[b]:
-                num = var_nums.setdefault(g,0)
-                d.phis.append(IRPhi(s.v,s.v+str(num)))
-                var_nums[g] = num + 1
-                worklist = worklist | d
-
-    var_maps = {}
-    for b in prog.blocks:
-        m = var_maps.setdefault(b,dict())
-        for phi in b.phis:
-            m[phi.orig_name] = (phi.assign_var,b)
         for s in b.statements:
             if isinstance(s,IRAssign):
-                num = var_nums.set_default(s.v,0)
+                varkill.add(s.v.reg)
+                blocks.setdefault(s.v.reg,set())
+                blocks[s.v.reg] |= {b}
+            for var in s.get_vars():
+                if var.reg == "this":
+                    continue
+                if var.reg not in varkill:
+                    globs.add(var.reg)
+        for iname in b.input_names:
+            varkill.add(iname)
+            blocks.setdefault(iname,set())
+            blocks[iname] |= {b}
+
+
+    var_nums = {"tmp":prog.tmp_count}
+    for g in globs:
+        worklist = set(blocks[g])
+        while worklist:
+            b = worklist.pop()
+            for d in df[b]:
+                add = True
+                for phi in d.phis:
+                    if phi.orig_name == g:
+                        add = False
+                        break
+                
+                if add:
+                    num = var_nums.setdefault(g,0)
+                    d.phis.append(IRPhi(g,IRVar(g+str(num))))
+                    var_nums[g] = num + 1
+                    worklist |= {d}
+
+    # print("blocks:", {k: [b.name for b in v] for k,v in blocks.items()})
+    # print("globs:", globs)
+    # print("df:", {b.name: [d.name for d in v] for b,v in df.items()})
+
+    # change variable names for assignments to unique ssa name, map assignment orig name -> block name
+    var_maps = {}
+    for b in prog.blocks:
+        m = var_maps.setdefault(b, dict())
+        for phi in b.phis:
+            m[phi.orig_name] = phi.assign_var.reg
+        for i,iname in enumerate(b.input_names):
+            if iname == "this":
+                continue
+            num = var_nums.setdefault(iname, 0)
+            orig = iname
+            var_nums[orig] = num + 1
+            iname = orig + str(num)
+            m[orig] = iname
+            b.input_names[i] = iname
+        for s in b.statements:
+            s.change_vars(m)
+            if isinstance(s, IRAssign):
+                if s.v.istmp:
+                    continue
+                num = var_nums.setdefault(s.v.reg, 0)
                 orig = s.v.reg
-                s.v.reg = s.v.reg + num
-                m[orig] = (s.v.reg,b)
-        for p in b.successors:
-            pm = var_maps.setdefault(p,dict())
-            for orig_name,var_info in m.items():
-                new_name,_ = var_info
-                if orig_name not in pm:
-                    pm[orig_name] = (new_name,b)
+                var_nums[orig] = num + 1
+                s.v.reg = orig + str(num)
+                m[orig] = s.v.reg
+        b.ctl_tsf.change_vars(m)
+
+    # propogate variable names from one block to another and insert appropriate phis
+    worklist = list(prog.blocks)
+    while worklist:
+        b = worklist.pop() 
+        m = var_maps[b]
+        for s in b.successors:
+            for phi in s.phis:
+                if phi.orig_name in m and not phi.get_block(m[phi.orig_name]):
+                    phi.add(m[phi.orig_name], b)
+
+            sm = var_maps[s]
+            changed = False
+            for orig_name, new_name in m.items():
+                if orig_name not in sm:
+                    sm[orig_name] = new_name
+                    changed = True
+            if changed:
+                worklist.append(s)
 
     for b in prog.blocks:
-        for phi in b.phis:
-            infos = var_maps[b][phi.orig_name]
-            for name,block in infos:
-                phi.add(name,block)
+        in_map = {}
+        for p in b.predecessors:
+            m = var_maps[p]
+            for orig,new in m.items():
+                if not orig in b.phis:
+                    in_map[orig]=new
 
+        for s in b.statements:
+            s.change_vars(in_map)
+        b.ctl_tsf.change_vars(in_map)
 
+#TODO
+
+# if vars come from some paths but not others check that
+
+# tagging numbers
 
 # change order of args in IRPROG
+
 # validate things like never ending loops
+
 # validate early returns and still more statements
-# tests for evaluation right now i just eyeball it
+
 # validate operators once i find out which are permitted according to the ir
+
 # should we be validating if methods exist or fields exist or vars exist?
+
 # regression tests for returns before other stmts working, and not overwriting the blocks control transfers if a while
 # or if or ifonly
 
-# ssa AND phi to str
-# tagging numbers
 
 
 if __name__ == "__main__":
@@ -1169,7 +1329,7 @@ if __name__ == "__main__":
         parser.error("Must provide input: filename, --str, or --stdin")
 
     if not any([args.tokenize, args.parse, args.noopt, args.ssa]):
-        args.opt = True
+        args.ssa = True
 
     if args.str:
         inp = args.str
@@ -1202,7 +1362,4 @@ if __name__ == "__main__":
         sys.exit()
 
     mk_ssa(prog)
-    if args.ssa:
-        print("not implemented yet")
-        sys.exit()
-        print(prog)
+    print(prog)

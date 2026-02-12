@@ -804,8 +804,6 @@ def test_cfg_field_assign():
     ir1 = ast1.to_ir(prog)
     assert len(ir1.blocks) == 1
     stmts = ir1.blocks[0].statements
-    for s in stmts:
-        print(s)
     assert len(stmts) == 9
 
     #creating object
@@ -879,12 +877,12 @@ def test_ir_to_str():
         []
         )
     prog = ast1.to_ir_program()
-    print(prog)
+    #print(prog)
 
     for prg in [nothing, optimal, first_example, simple_stack, complex_stack]:
-        print(prg)
+        #print(prg)
         tree = Parser(Tokenizer(prg)).parse_program()
-        print(tree.to_ir_program())
+        #print(tree.to_ir_program())
 
 def test_successor_predecessor():
     main = [IfStatement(NumExpression(1),
@@ -912,9 +910,6 @@ def test_successor_predecessor():
     f2 = t.ctl_tsf.b_false
 
     after = f.ctl_tsf.b_after
-    print(ir)
-    for b in after.predecessors:
-        print(b.name)
 
     assert len(main.successors) == 2
     assert t in main.successors and f in main.successors and main in t.predecessors and main in f.predecessors
@@ -983,11 +978,19 @@ def test_df():
     assert df[a] == set()
 
 def test_cfg_to_ssa():
-    ast1 = Program([],[],[]) #Make this something where we continously assign to the same field
-    ir = ast1.to_ir_program()
+    a = IRBasicBlock("after",[IRPrint(IRVar("b"))],IRRet(0),[])
+    t2 = IRBasicBlock("t2",[IRAssign(IRVar("b"),IRConst(4)),IRPrint(IRVar("b"))],IRJump(a),[])
+    fboth = IRBasicBlock("fboth",[IRPrint(IRVar("x"))],IRRet(0),[])
+    t = IRBasicBlock("t",[IRAssign(IRVar("x"),IRConst(6)),IRPrint(IRVar("x"))],IRIf(IRVar("bye"),t2,fboth),[])
+    f = IRBasicBlock("f",[IRAssign(IRVar("a"),IRConst(7)),IRAssign(IRVar("b"),IRVar("a")),IRPrint(IRVar("x")),IRPrint(IRVar("b"))],IRIf(IRVar("bye"),a,fboth),[])
+    b=IRBasicBlock("before",[IRAssign(IRVar("x"),IRConst(5)),IRPrint(IRVar("x"))],IRIf(IRVar("hi"),t,f),[])
+
+    prog = IRProgram([],[],dict(),dict(),[a,t2,fboth,t,f,b])
+    mk_ssa(prog)
+    print(prog)
 
     seen = set()
-    for b in ir.blocks:
+    for b in prog.blocks:
         for s in b.statements:
             if isinstance(s,IRAssign):
                 assigned = s.v.reg
