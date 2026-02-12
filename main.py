@@ -1287,11 +1287,54 @@ def mk_ssa(prog:IRProgram):
             s.change_vars(in_map)
         b.ctl_tsf.change_vars(in_map)
 
+def lvn(prog:IRProgram):
+    for block in prog.blocks:
+        vn = {}
+        for s in block.statements:
+            if isinstance(s,IRAssign):
+                if isinstance(s.val,IROperation):
+                    if isinstance(s.val.l,IRConst):
+                        vl = s.val.l.n
+                    else:
+                        vl = s.val.l.reg
+                    if isinstance(s.val.r,IRConst):
+                        vr = s.val.r.n
+                    else:
+                        vr = s.val.r.reg
+                    # the vn is the name but we still have to check if it falls under other names
+                    vl = vn.get(vl,vl)
+                    vr = vn.get(vr,vr)
+
+                    if s.val.op in {"+","*","=="}:
+                        if type(vl) == type(vr):
+                            key = (s.val.op,tuple(sorted([vl,vr])))
+                        else:
+                            if type(vl) == int:
+                                key = (s.val.op,(vl,vr))
+                            else:
+                                key = (s.val.op,(vr,vl))
+                    else:
+                        key = (s.val.op,(vl,vr))
+                else:
+                    if isinstance(s.val,IRConst):
+                        val = s.val.n
+                    else:
+                        val = s.val.reg
+                    
+                    key = vn.get(val,val)
+
+                if key in vn:
+                    s.val = IRVar(vn[key])
+                    vn[s.v.reg] = vn[key]
+                else:
+                    vn[s.v.reg] = s.v.reg
+                    vn[key] = s.v.reg
+
 #TODO
 
 # if vars come from some paths but not others check that
 
-# tagging numbers
+# refactor mk_ssa
 
 # change order of args in IRPROG
 
@@ -1319,17 +1362,22 @@ if __name__ == "__main__":
     stage_group = parser.add_mutually_exclusive_group()
     stage_group.add_argument("-t","--tokenize", help='Execute through tokenize stage', action='store_true')
     stage_group.add_argument("-p","--parse",help="Execute through parse stage",action='store_true')
-    stage_group.add_argument("-c","-noopt","--noopt","--cfg",help="Execute through IR cfg stage",action='store_true')
+    stage_group.add_argument("-c","--cfg",help="Execute through IR cfg stage",action='store_true')
     stage_group.add_argument("-o","--opt","--optimize","--optimization",help="Execute through IR optimization stage",action='store_true')
     stage_group.add_argument("-s","--ssa",help="Execute through IR ssa stage",action="store_true")
+    stage_group.add_argument("-l","--vn","--lvn",help="Execute through IR ssa stage",action="store_true")
+
+    parser.add_argument("--novn","--no-vn",help="skip the local version numbering step",action="store_true")
+    parser.add_argument("--noopt","--no-opt",help="skip the peephold optimization step",action="store_true")
     args = parser.parse_args()
 
 
     if not any([args.file, args.str, args.stdin]):
         parser.error("Must provide input: filename, --str, or --stdin")
 
-    if not any([args.tokenize, args.parse, args.noopt, args.ssa]):
-        args.ssa = True
+    if not any([args.tokenize, args.parse, args.opt, args.ssa, args.vn]):
+        print("activating")
+        args.vn = True
 
     if args.str:
         inp = args.str
@@ -1352,14 +1400,24 @@ if __name__ == "__main__":
         sys.exit()
 
     prog = parse_tree.to_ir_program()
-    if args.noopt:
+    if args.cfg:
         print(prog)
         sys.exit()
 
-    pre_eval_opt(prog)
+    if not args.noopt:
+        pre_eval_opt(prog)
     if args.opt:
         print(prog)
         sys.exit()
 
     mk_ssa(prog)
-    print(prog)
+    if args.ssa:
+        print(prog)
+        sys.exit()
+
+    if not args.novn:
+        print("vn!!!!")
+        lvn(prog)
+    if args.vn:
+        print(prog)
+        sys.exit()
