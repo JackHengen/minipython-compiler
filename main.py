@@ -31,21 +31,22 @@ class TokenType(Enum):
     NEQUAL = 21
     UNDER = 22
     NEWLINE = 23
-    IF = 24
-    ELSE = 25
-    IFONLY = 26
-    WHILE = 27
-    RETURN = 28
-    PRINT = 29
-    THIS = 30
-    CLASS = 31
-    WITH = 32
-    LOCALS = 33
-    FIELDS = 34
-    METHOD = 35
-    MAIN = 36
-    NUMBER = 37
-    IDENTIFIER = 38
+    NEWLINES = 24
+    IF = 25
+    ELSE = 26
+    IFONLY = 27
+    WHILE = 28
+    RETURN = 29
+    PRINT = 30
+    THIS = 31
+    CLASS = 32
+    WITH = 33
+    LOCALS = 34
+    FIELDS = 35
+    METHOD = 36
+    MAIN = 37
+    NUMBER = 38
+    IDENTIFIER = 39
 
 OPERATORS = [TokenType.PLUS,TokenType.MINUS,TokenType.ASTER,TokenType.SLASH,TokenType.LABRAC,TokenType.RABRAC,TokenType.DEQUAL,TokenType.NEQUAL]
 
@@ -61,7 +62,7 @@ class Token():
 class Tokenizer:
     def __init__(self,s:str):
         self.s = s
-        self.pos = 0
+        self.pos = 0 #token pos
         self.toks = []
 
     def peek(self) -> Token:
@@ -84,6 +85,7 @@ class Tokenizer:
         pos += 1
 
         tok = None
+        s = c
         if c == "(":
             tok = Token(TokenType.LPAREN, "(")
         if c == ")":
@@ -134,10 +136,6 @@ class Tokenizer:
                 tok = Token(TokenType.EQUAL, "=")
         if c == "_":
             tok = Token(TokenType.UNDER, "_")
-        if c == "\n":
-            tok = Token(TokenType.NEWLINE,"\n")
-
-        s = str(c)
         if c.isdigit():
             while pos < len(self.s) and (c:= self.s[pos]).isdigit():
                 s += str(c)
@@ -175,6 +173,24 @@ class Tokenizer:
             tok = Token(TokenType.METHOD,s)
         if s == "main":
             tok = Token(TokenType.MAIN,s)
+
+        if s == "\n":
+            while pos < len(self.s) and (c := self.s[pos]) in ["\t"," "]:
+                s += c
+                pos += 1
+            if pos >= len(self.s) or self.s[pos] != "\n":
+                tok = Token(TokenType.NEWLINE,"\n")
+            else:
+                while pos < len(self.s) and (c := self.s[pos]) in ["\t"," "]:
+                    s += c
+                    pos += 1
+                while pos < len(self.s) and (c := self.s[pos]) == "\n":
+                    s += c
+                    pos += 1
+                    while pos < len(self.s) and (c := self.s[pos]) in ["\t"," "]:
+                        s += c
+                        pos += 1
+                tok = Token(TokenType.NEWLINES,s)
 
         self.s = self.s[pos:]
         if tok is None:
@@ -1093,9 +1109,9 @@ class Parser:
 
 
     def parse_cls(self):
-        _, ident, _, _, _ = self.parse(TokenType.CLASS,TokenType.IDENTIFIER,TokenType.LSBRAC,TokenType.NEWLINE,TokenType.FIELDS)
+        _, ident, _, _, _ = self.parse(TokenType.CLASS,TokenType.IDENTIFIER,TokenType.LSBRAC,[TokenType.NEWLINE,TokenType.NEWLINES],TokenType.FIELDS)
         field_names = self.parse_identifier_list()
-        self.parse(TokenType.NEWLINE)
+        self.parse([TokenType.NEWLINE,TokenType.NEWLINES])
         mths_nested = self.parse_until(TokenType.RSBRAC,Method)  # parse_until returns list-of-lists (even though we only have one nested list)
         methods = mths_nested[0]
         return Class(ident,field_names,methods)
@@ -1106,27 +1122,29 @@ class Parser:
         arg_names = self.parse_identifier_list()
         _, _, _ = self.parse(TokenType.RPAREN,TokenType.WITH,TokenType.LOCALS)
         local_names = self.parse_identifier_list()
-        _, _, s, _ = self.parse(TokenType.COLON,TokenType.NEWLINE,Statement,TokenType.NEWLINE)
-        ss, _ = self.parse_until([TokenType.METHOD,TokenType.RSBRAC],Statement,TokenType.NEWLINE,grab_trail=False)
+        _, _, s, _ = self.parse(TokenType.COLON,[TokenType.NEWLINE,TokenType.NEWLINES],Statement,[TokenType.NEWLINE,TokenType.NEWLINES])
+        ss, _ = self.parse_until([TokenType.METHOD,TokenType.RSBRAC],Statement,[TokenType.NEWLINE,TokenType.NEWLINES],grab_trail=False)
 
         return Method(ident,arg_names,local_names,[s,*ss])
 
     def parse_program(self):
         cls = []
+        if self.t.peek().type in [TokenType.NEWLINE,TokenType.NEWLINES]:
+            self.parse([TokenType.NEWLINE,TokenType.NEWLINES])
         if self.t.peek().type != TokenType.MAIN:
-            cls, _ = self.parse_until(TokenType.NEWLINE,Class,TokenType.NEWLINE)
-        _, _ = self.parse(TokenType.MAIN,TokenType.WITH)
+            cls, _ = self.parse_until(TokenType.MAIN,Class,[TokenType.NEWLINE,TokenType.NEWLINES],grab_trail=False)
+        self.parse(TokenType.MAIN,TokenType.WITH)
         locs = self.parse_identifier_list()
         _ = self.parse(TokenType.COLON)
 
         stmts=[]
         while self.t.peek() is not None:
             nl = self.t.get_next()
-            if nl.type != TokenType.NEWLINE:
+            if nl.type not in {TokenType.NEWLINE,TokenType.NEWLINES}:
                 self.parse_error("No newlines between statements in program entry point (main)")
             if self.t.peek() is None:
                 break
-
+            
             stmt = self.parse_stmt()
             stmts.append(stmt)
         return Program(cls,locs,stmts)
@@ -1318,8 +1336,10 @@ def lvn(prog:IRProgram):
                 else:
                     if isinstance(s.val,IRConst):
                         val = s.val.n
-                    else:
+                    elif isinstance(s.val,IRVar):
                         val = s.val.reg
+                    else:
+                        continue
                     
                     key = vn.get(val,val)
 
@@ -1376,7 +1396,6 @@ if __name__ == "__main__":
         parser.error("Must provide input: filename, --str, or --stdin")
 
     if not any([args.tokenize, args.parse, args.opt, args.ssa, args.vn]):
-        print("activating")
         args.vn = True
 
     if args.str:
