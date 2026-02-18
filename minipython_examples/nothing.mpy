@@ -1,0 +1,13 @@
+class Foo [
+    fields
+    method doStuff(x,y,z) with locals r:
+        if (x < y): {
+            r = ((x + y) + z)
+        } else {
+            r = ((x + y) + z)
+        }
+        print(r)
+        return ((x + y) + z)
+]
+
+main with:

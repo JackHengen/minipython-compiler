@@ -1,0 +1,17 @@
+class A [
+    fields x
+    method m() with locals:
+      return &this.x
+    method b() with locals:
+        print(3)
+]
+class B [
+    fields y
+    method m() with locals:
+      return 0
+]
+
+main with x:
+x = @A
+!x.x = 3
+print(^x.b())

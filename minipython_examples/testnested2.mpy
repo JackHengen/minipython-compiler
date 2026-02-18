@@ -1,0 +1,26 @@
+main with:
+    x = 1
+    if x: {
+        y = 5
+        if y: {
+            print(y)
+        } else {
+            y = 11
+        }
+    } else {
+        print(2)
+    }
+    while (x > 1): {
+        y = 9
+        while (y > 1): {
+            y = (y - 1)
+            print(y)
+        }
+        x = (x - 1)
+    }
+    ifonly 5000: {
+        ifonly 5000: {
+            print(4)
+        }
+    }
+    print(5)

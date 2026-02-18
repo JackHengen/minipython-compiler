@@ -1,4 +1,21 @@
-from main import *
+from minipython.ir.array import *
+from minipython.ir.basic_block import *
+from minipython.ir.control_transfer import *
+from minipython.ir.expressions import *
+from minipython.ir.phi import *
+from minipython.ir.program import *
+from minipython.ir.statements import *
+from minipython.optimizations.optimzations import *
+from minipython.parser.ast.ast_node import *
+from minipython.parser.ast.astclass import *
+from minipython.parser.ast.expressions import *
+from minipython.parser.ast.method import *
+from minipython.parser.ast.program import *
+from minipython.parser.ast.statements import *
+from minipython.parser.parser import *
+from minipython.tokenizer.tokens import *
+from minipython.tokenizer.tokenizer import *
+
 import time
 import pytest
 
@@ -978,9 +995,9 @@ def test_df():
     assert df[a] == set()
 
 def test_cfg_to_ssa():
-    a = IRBasicBlock("after",[IRPrint(IRVar("b"))],IRRet(0),[])
+    a = IRBasicBlock("after",[IRPrint(IRVar("b"))],IRRet(IRConst(0)),[])
     t2 = IRBasicBlock("t2",[IRAssign(IRVar("b"),IRConst(4)),IRPrint(IRVar("b"))],IRJump(a),[])
-    fboth = IRBasicBlock("fboth",[IRPrint(IRVar("x"))],IRRet(0),[])
+    fboth = IRBasicBlock("fboth",[IRPrint(IRVar("x"))],IRRet(IRConst(0)),[])
     t = IRBasicBlock("t",[IRAssign(IRVar("x"),IRConst(6)),IRPrint(IRVar("x"))],IRIf(IRVar("bye"),t2,fboth),[])
     f = IRBasicBlock("f",[IRAssign(IRVar("a"),IRConst(7)),IRAssign(IRVar("b"),IRVar("a")),IRPrint(IRVar("x")),IRPrint(IRVar("b"))],IRIf(IRVar("bye"),a,fboth),[])
     b=IRBasicBlock("before",[IRAssign(IRVar("x"),IRConst(5)),IRPrint(IRVar("x"))],IRIf(IRVar("hi"),t,f),[])

@@ -1,0 +1,21 @@
+main with:
+    if 1000: {
+        if 2000: {
+            print(1)
+        } else {
+            print(1)
+        }
+    } else {
+        print(2)
+    }
+    while 3000: {
+        while 4000: {
+            print(3)
+        }
+    }
+    ifonly 5000: {
+        ifonly 5000: {
+            print(4)
+        }
+    }
+    print(5)

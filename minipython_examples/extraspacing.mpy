@@ -1,0 +1,30 @@
+
+
+class ListNode [
+
+  
+    fields val, next
+      
+  
+    method getNext() with locals:
+
+        print(1)
+
+        return &this.next
+
+    method getVal() with locals:
+        return &this.val
+
+]
+
+
+   
+main with:
+    
+       
+    print(1)
+
+
+    print(2)
+
+

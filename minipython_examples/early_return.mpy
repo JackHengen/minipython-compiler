@@ -1,0 +1,10 @@
+class a[
+    fields
+    method b() with locals:
+        return 3
+        print(1)
+        print(2)
+]
+
+main with:
+    print(^@a.b())

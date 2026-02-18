@@ -1,0 +1,28 @@
+class X[
+    fields
+    method b() with locals:
+        print((9+10))
+        print((7/3))
+        print((10-5))
+        print((10*5))
+        print((7==7))
+        print((7==6))
+        print((7>7))
+        print((7>6))
+        print((6<6))
+        print((6<7))
+]
+
+main with:
+    print((9+10))
+    print((7/3))
+    print((10-5))
+    print((10*5))
+    print((7==7))
+    print((7==6))
+    print((7>7))
+    print((7>6))
+    print((6<6))
+    print((6<7))
+    y = @X
+    _ = ^y.b()

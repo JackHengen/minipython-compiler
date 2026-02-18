@@ -1,0 +1,14 @@
+main with a,b,c:
+    a = 6
+    b = 7
+    c = 6
+    print(a)
+    print(b)
+    if 1:{
+        c = 9
+        print(c)
+    } else {
+        a = 9
+        print(a)
+    }
+    print(c)
