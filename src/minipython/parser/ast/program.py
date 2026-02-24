@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING
 from dataclasses import dataclass
 from .ast_node import ASTNode
 from ...ir.program import IRProgram
@@ -6,10 +7,14 @@ from ...ir.control_transfer import IRRet
 from ...ir.expressions import IRConst
 from ...ir.array import IRArray
 
+if TYPE_CHECKING:
+    from .astclass import Class
+    from .statements import Statement
+
 @dataclass
 class Program(ASTNode):
     classes:list[Class]
-    local_vars:list[str]
+    local_vars:dict[str, str]
     statements:list[Statement]
 
     def to_ir_program(self):
@@ -18,7 +23,7 @@ class Program(ASTNode):
         fcounter = 0
         vcounter = 0
         for c in self.classes:
-            for f in c.fields:
+            for f in c.fields.keys():
                 if f not in field_map:
                     field_map[f] = fcounter
                     fcounter += 1
@@ -41,7 +46,7 @@ class Program(ASTNode):
             for i in range(len(mthd_map)):
                 vtbl.append(0)
 
-            for f in c.fields:
+            for f in c.fields.keys():
                 class_map[field_map[f]] = counter
                 counter += 1
             class_field_maps.append(IRArray(class_map,f"fields{c.class_name}"))

@@ -1,9 +1,11 @@
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, abstractmethod
 from typing import Union
 
 class IRExpression(ABC):
-    pass
+    @abstractmethod
+    def get_type(self,type_map:dict[str,str]):
+        pass
 
 @dataclass
 class IRVar(IRExpression):
@@ -21,6 +23,9 @@ class IRVar(IRExpression):
     def get_vars(self):
         return [self]
 
+    def get_type(self,type_map:dict[str,str]):
+        pass
+
 
 @dataclass
 class IRConst(IRExpression):
@@ -33,6 +38,10 @@ class IRConst(IRExpression):
 
     def get_vars(self):
         return []
+
+    def get_type(self,type_map:dict[str,str]):
+        pass
+
 @dataclass
 class IRBlockName(IRExpression):
     name:str
@@ -44,6 +53,9 @@ class IRBlockName(IRExpression):
 
     def get_vars(self):
         return []
+
+    def get_type(self,type_map:dict[str,str]):
+        pass
 
 NONGLOBALS = Union[IRVar,IRConst]
 GLOBALS = Union[NONGLOBALS,IRBlockName]
@@ -88,6 +100,9 @@ class IROperation(IRExpression):
     def get_vars(self):
         return [*self.l.get_vars(),*self.r.get_vars()]
 
+    def get_type(self,type_map:dict[str,str]):
+        pass
+
 
 @dataclass
 class IRCall(IRExpression):
@@ -110,6 +125,9 @@ class IRCall(IRExpression):
     def get_vars(self):
         return [*self.c.get_vars(),*self.r.get_vars()]
 
+    def get_type(self,type_map:dict[str,str]):
+        pass
+
 @dataclass
 class IRAlloc(IRExpression):
     n:IRConst
@@ -118,9 +136,12 @@ class IRAlloc(IRExpression):
 
     def change_vars(self,var_map:dict[str,str]):
         return
-    
+
     def get_vars(self):
         return []
+
+    def get_type(self,type_map:dict[str,str]):
+        pass
 
 
 @dataclass
@@ -137,14 +158,20 @@ class IRGetELT(IRExpression):
     def get_vars(self):
         return [*self.base.get_vars(),*self.i.get_vars()]
 
+    def get_type(self,type_map:dict[str,str]):
+        pass
+
 @dataclass
 class IRLoad(IRExpression):
     base:IRVar
     def __str__(self):
         return f"load({self.base})"
-    
+
     def change_vars(self,var_map:dict[str,str]):
         self.base.change_vars(var_map)
 
     def get_vars(self):
         return self.base.get_vars()
+
+    def get_type(self,type_map:dict[str,str]):
+        pass

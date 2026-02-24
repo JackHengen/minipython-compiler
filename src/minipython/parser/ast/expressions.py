@@ -4,12 +4,22 @@ from dataclasses import dataclass
 from abc import abstractmethod
 from ...ir.expressions import IRAlloc, IRBlockName, IRCall, IRConst, IRGetELT, IRLoad, IROperation, IRVar, NONGLOBALS
 from ...ir.statements import IRStore
-from typing import get_args
+from typing import get_args, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ...ir.program import IRProgram
+    from ...ir.expressions import IRExpression
 
 class Expression(ASTNode):
     @abstractmethod
     def to_ir(self,prog:IRProgram) -> IRExpression:
         pass
+
+@dataclass
+class NullExpression(Expression):
+    class_name:str
+    def to_ir(self,prog:IRProgram):
+        return IRConst(0)
 
 @dataclass
 class NumExpression(Expression):
@@ -57,7 +67,6 @@ class MethodExpression(Expression):
         if not isinstance(expr,IRVar):
             expr = prog.mk_tmp(expr)
         load = prog.mk_tmp(IRLoad(expr))
-        
         base = load
         i = prog.mthd_name_to_vtbl_index[self.method_name]
         getelt = prog.mk_tmp(IRGetELT(base,IRConst(i)))
@@ -79,12 +88,11 @@ class FieldReadExpression(Expression):
         load = prog.mk_tmp(IRLoad(addr)) # load in fields for class
 
         base = load
-        field_ind = prog.field_name_to_map_index[self.field_name] 
+        field_ind = prog.field_name_to_map_index[self.field_name]
 
         class_field_ind = prog.mk_tmp(IRGetELT(base,IRConst(field_ind))) # grab field from fields
 
         return IRGetELT(expr,IRConst(class_field_ind))
-        
 
 @dataclass
 class NewObjExpression(Expression):

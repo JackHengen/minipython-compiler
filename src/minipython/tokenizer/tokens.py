@@ -41,12 +41,15 @@ class TokenType(Enum):
     MAIN = 37
     NUMBER = 38
     IDENTIFIER = 39
+    TYPE = 40
+    RETURNING = 41
+    NULL = 42
 
 OPERATORS = [TokenType.PLUS,TokenType.MINUS,TokenType.ASTER,TokenType.SLASH,TokenType.LABRAC,TokenType.RABRAC,TokenType.DEQUAL,TokenType.NEQUAL]
 
 
 class Token():
-    def __init__(self,typ:TokenType,lexeme:str):
+    def __init__(self,typ:TokenType,lexeme:str,token_start_line=None,token_start_col=None,token_end_line=None,token_end_col=None):
         self.type = typ
         self.lexeme = lexeme
     def __repr__(self):

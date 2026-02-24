@@ -64,10 +64,10 @@ if __name__ == "__main__":
             inp = f.read()
 
     t = Tokenizer(inp)
-    toks = t.tokenize()
-    if args.tokenize:
-        print(toks)
-        sys.exit()
+    # toks = t.tokenize()
+    # if args.tokenize:
+    #     print(toks)
+    #     sys.exit()
 
     p = Parser(t)
     parse_tree = p.parse_program()

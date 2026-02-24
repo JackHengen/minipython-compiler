@@ -3,9 +3,31 @@ from .tokens import Token,TokenType
 
 class Tokenizer:
     def __init__(self,s:str):
-        self.s = s
-        self.pos = 0 #token pos
+        self.s = s # modified as we tokenize the string
+        self.pos = 0 # position in tokens if we tokenized all in one go and are now walking through stored tokens 
         self.toks = []
+
+        self.index = 0
+        self.line = 1 # how many lines down in input
+        self.col = 0 # how many columns into line
+
+    def advance(self):
+        c = self.s[self.index]
+        self.index += 1
+
+        if c == "\n":
+            self.line += 1
+            self.col = 0
+        else:
+            self.col += 1
+
+        return c
+
+    def reset(self):
+        self.pos = 0
+        self.line = 0
+        self.col = 0
+        self.index = 0
 
     def peek(self) -> Token:
         tok = self.get_next()
@@ -13,18 +35,16 @@ class Tokenizer:
         return tok
 
     def get_next(self) -> Token:
-        if len(self.toks) > self.pos:
+        if len(self.toks) > self.pos: # TODO set line and col to that stored in the token
             tok = self.toks[self.pos]
             self.pos += 1
             return tok
 
-        pos = 0  # string pos not the token cache pos
-        while(pos < len(self.s) and (c := self.s[pos]) in ["\t"," "]):
-            pos += 1
+        while(self.index < len(self.s) and (c := self.advance()) in ["\t"," "]):
+            pass
 
-        if pos >= len(self.s):
+        if self.index >= len(self.s):
             return None
-        pos += 1
 
         tok = None
         s = c
@@ -53,11 +73,11 @@ class Tokenizer:
         if c == "@":
             tok = Token(TokenType.AT, "@")
         if c == "!":
-            if self.s[pos] == "=":
-                pos +=1
-                tok = Token(TokenType.NEQUAL,"!=")
+            if self.s[self.index] == "=":
+                s += self.advance()
+                tok = Token(TokenType.NEQUAL,s)
             else:
-                tok = Token(TokenType.EXCLAM, "!")
+                tok = Token(TokenType.EXCLAM, s)
         if c == "+":
             tok = Token(TokenType.PLUS, "+")
         if c == "-":
@@ -71,24 +91,26 @@ class Tokenizer:
         if c == ">":
             tok = Token(TokenType.RABRAC, ">")
         if c == "=":
-            if self.s[pos] == "=":
-                pos += 1
-                tok = Token(TokenType.DEQUAL,"==")
+            if self.s[self.index] == "=":
+                s += self.advance()
+                tok = Token(TokenType.DEQUAL,s)
             else:
-                tok = Token(TokenType.EQUAL, "=")
+                tok = Token(TokenType.EQUAL,s)
         if c == "_":
             tok = Token(TokenType.UNDER, "_")
         if c.isdigit():
-            while pos < len(self.s) and (c:= self.s[pos]).isdigit():
-                s += str(c)
-                pos += 1
+            while self.index < len(self.s) and (c:= self.s[self.index]).isdigit():
+                s += str(self.advance())
             tok = Token(TokenType.NUMBER,s)
 
         if c.isalpha():
-            while pos < len(self.s) and (c := self.s[pos]).isalpha():
-                s += c
-                pos += 1
-            tok = Token(TokenType.IDENTIFIER,s)
+            while self.index < len(self.s) and (c := self.s[self.index]).isalpha():
+                s += self.advance()
+
+            if s[0].isupper() or s == "int":
+                tok = Token(TokenType.TYPE,s)
+            else:
+                tok = Token(TokenType.IDENTIFIER,s)
         if s == "if":
             tok = Token(TokenType.IF,s)
         if s == "else":
@@ -115,30 +137,29 @@ class Tokenizer:
             tok = Token(TokenType.METHOD,s)
         if s == "main":
             tok = Token(TokenType.MAIN,s)
+        if s == "returning":
+            tok = Token(TokenType.RETURNING,s)
+        if s == "null":
+            tok = Token(TokenType.NULL,s)
 
         if s == "\n":
-            while pos < len(self.s) and (c := self.s[pos]) in ["\t"," "]:
-                s += c
-                pos += 1
-            if pos >= len(self.s) or self.s[pos] != "\n":
+            while self.index < len(self.s) and (self.s[self.index]) in ["\t"," "]:
+                s += self.advance()
+            if self.index >= len(self.s) or self.s[self.index] != "\n":
                 tok = Token(TokenType.NEWLINE,"\n")
             else:
-                while pos < len(self.s) and (c := self.s[pos]) in ["\t"," "]:
-                    s += c
-                    pos += 1
-                while pos < len(self.s) and (c := self.s[pos]) == "\n":
-                    s += c
-                    pos += 1
-                    while pos < len(self.s) and (c := self.s[pos]) in ["\t"," "]:
-                        s += c
-                        pos += 1
+                while self.index < len(self.s) and (self.s[self.index]) in ["\t"," "]:
+                    s += self.advance()
+                while self.index < len(self.s) and (self.s[self.index]) == "\n":
+                    s += self.advance()
+                    while self.index < len(self.s) and (c := self.s[self.index]) in ["\t"," "]:
+                        s += self.advance()
                 tok = Token(TokenType.NEWLINES,s)
 
-        self.s = self.s[pos:]
         if tok is None:
             raise ValueError(f"Inappropriate symbol {c}")
         else:
-            self.pos +=1
+            self.pos +=1 # global token position
             self.toks.append(tok)
             return tok
 
@@ -148,15 +169,3 @@ class Tokenizer:
             pass
         self.pos = 0
         return self.toks
-
-
-
-
-
-
-
-
-
-
-
-
