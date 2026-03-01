@@ -1,11 +1,9 @@
-from abc import ABC
-from dataclasses import dataclass, abstractmethod
+from abc import ABC ,abstractmethod
+from dataclasses import dataclass 
 from typing import Union
 
 class IRExpression(ABC):
-    @abstractmethod
-    def get_type(self,type_map:dict[str,str]):
-        pass
+    pass
 
 @dataclass
 class IRVar(IRExpression):
@@ -23,8 +21,6 @@ class IRVar(IRExpression):
     def get_vars(self):
         return [self]
 
-    def get_type(self,type_map:dict[str,str]):
-        pass
 
 
 @dataclass
@@ -39,9 +35,6 @@ class IRConst(IRExpression):
     def get_vars(self):
         return []
 
-    def get_type(self,type_map:dict[str,str]):
-        pass
-
 @dataclass
 class IRBlockName(IRExpression):
     name:str
@@ -53,9 +46,6 @@ class IRBlockName(IRExpression):
 
     def get_vars(self):
         return []
-
-    def get_type(self,type_map:dict[str,str]):
-        pass
 
 NONGLOBALS = Union[IRVar,IRConst]
 GLOBALS = Union[NONGLOBALS,IRBlockName]
@@ -100,10 +90,6 @@ class IROperation(IRExpression):
     def get_vars(self):
         return [*self.l.get_vars(),*self.r.get_vars()]
 
-    def get_type(self,type_map:dict[str,str]):
-        pass
-
-
 @dataclass
 class IRCall(IRExpression):
     c:IRVar
@@ -125,9 +111,6 @@ class IRCall(IRExpression):
     def get_vars(self):
         return [*self.c.get_vars(),*self.r.get_vars()]
 
-    def get_type(self,type_map:dict[str,str]):
-        pass
-
 @dataclass
 class IRAlloc(IRExpression):
     n:IRConst
@@ -139,9 +122,6 @@ class IRAlloc(IRExpression):
 
     def get_vars(self):
         return []
-
-    def get_type(self,type_map:dict[str,str]):
-        pass
 
 
 @dataclass
@@ -158,9 +138,6 @@ class IRGetELT(IRExpression):
     def get_vars(self):
         return [*self.base.get_vars(),*self.i.get_vars()]
 
-    def get_type(self,type_map:dict[str,str]):
-        pass
-
 @dataclass
 class IRLoad(IRExpression):
     base:IRVar
@@ -172,6 +149,3 @@ class IRLoad(IRExpression):
 
     def get_vars(self):
         return self.base.get_vars()
-
-    def get_type(self,type_map:dict[str,str]):
-        pass

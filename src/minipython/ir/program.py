@@ -1,8 +1,15 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
 from .statements import IRAssign
 from .expressions import IRVar
 from .basic_block import IRBasicBlock
+
+if TYPE_CHECKING:
+    from .expressions import IRExpression
+    from .statements import IRStatement
+    from .array import IRArray
+    from .control_transfer import IRControlTransfer
 
 @dataclass
 class IRProgram:
@@ -13,6 +20,7 @@ class IRProgram:
     blocks: list[IRBasicBlock] = field(default_factory=list)
     curr_block:IRBasicBlock = None
     tmp_count:int = 0
+    curr_class:Class= None
 
     def add_block(self,block_name:str,args:list=None):
         if args is None:
@@ -48,4 +56,3 @@ class IRProgram:
                 s+="\n"
             s+= f"{b}\n"
         return s
-

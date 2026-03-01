@@ -1,10 +1,10 @@
 class ListNode [
     fields val:int, next:ListNode
 
-    method getNext() with locals:
+    method getNext() returning ListNode with locals:
         return &this.next
 
-    method getVal() with locals:
+    method getVal() returning int with locals:
         return &this.val
 ]
 
@@ -19,7 +19,7 @@ class Stack [
         return 0
 
     method pop() returning int with locals tmp:int, head:ListNode:
-        if (&this.list == 0): {
+        if (&this.list == null:ListNode): {
             return 0
         } else {
             head = &this.list
@@ -47,6 +47,6 @@ class Stacker [
 
 main with stk:Stack, stkr:Stacker:
     stk = @Stack
-    !stk.list = 0
+    !stk.list = null:ListNode
     stkr = @Stacker
     _ = ^stkr.do(stk)

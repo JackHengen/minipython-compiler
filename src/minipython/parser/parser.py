@@ -157,6 +157,7 @@ class Parser:
         self.parse([TokenType.NEWLINE,TokenType.NEWLINES])
         mths_nested = self.parse_until(TokenType.RSBRAC,Method)  # parse_until returns list-of-lists (even though we only have one nested list)
         methods = mths_nested[0]
+        methods = {m.method_name:m for m in methods}
         return Class(ident,fields,methods)
 
 
@@ -185,6 +186,7 @@ class Parser:
         locs = self.parse_identifier_list()
         _ = self.parse(TokenType.COLON)
 
+        cls = {c.class_name:c for c in cls}
         stmts=[]
         while self.t.peek() is not None:
             nl = self.t.get_next()

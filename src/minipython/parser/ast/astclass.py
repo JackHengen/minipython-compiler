@@ -13,11 +13,18 @@ if TYPE_CHECKING:
 class Class(ASTNode):
     class_name:str
     fields:dict[str, str]
-    methods:list[Method]
+    methods:dict[str, Method]
 
     def to_ir(self,prog:IRProgram):
-        for m in self.methods:
-            prog.add_block(self.class_name+m.method_name,{"this":self.class_name}.update(m.args))
+        prog.curr_class = self
+        for m in self.methods.values():
+            prog.add_block(self.class_name+m.method_name,["this"]+list(m.args.keys()))
             m.to_ir(prog)
             if not prog.curr_block.ctl_tsf:
                 prog.add_ctl_tsf(IRRet(IRConst(0)))
+
+    def validate_types(self,classes:dict[str,Class]):
+        var_map = {"this":self.class_name}
+        var_map.update(self.fields)
+        for m in self.methods.values():
+            m.validate_types(var_map,classes,self)

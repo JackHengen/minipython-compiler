@@ -18,3 +18,12 @@ class Method(ASTNode):
     def to_ir(self,prog:IRProgram):
         for s in self.statements:
             s.to_ir(prog)
+
+    def validate_types(self,var_map:dict[str,str],classes:dict[str,Class],curr_class:Class):
+        clone = {}
+        clone.update(var_map)
+        clone.update(self.args)
+        clone.update(self.local_vars)
+        for s in self.statements:
+            s.validate_types(clone,classes,curr_class,self)
+        return True

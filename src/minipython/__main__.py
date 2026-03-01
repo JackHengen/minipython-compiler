@@ -2,14 +2,12 @@ import argparse
 import sys
 from .parser.parser import Parser
 from .tokenizer.tokenizer import Tokenizer
-from .optimizations.optimzations import lvn, mk_ssa, pre_eval_opt
+from .optimizations.optimizations import lvn, mk_ssa, pre_eval_opt
 
 
 
 
-#TODO
-
-# if vars come from some paths but not others check that
+# TODO wrap strs that are types in a Type() class with its actual type passed as type_name
 
 # refactor mk_ssa
 
@@ -20,11 +18,6 @@ from .optimizations.optimzations import lvn, mk_ssa, pre_eval_opt
 # validate early returns and still more statements
 
 # validate operators once i find out which are permitted according to the ir
-
-# should we be validating if methods exist or fields exist or vars exist?
-
-# regression tests for returns before other stmts working, and not overwriting the blocks control transfers if a while
-# or if or ifonly
 
 
 
@@ -64,6 +57,7 @@ if __name__ == "__main__":
             inp = f.read()
 
     t = Tokenizer(inp)
+    # TODO fix tokenize
     # toks = t.tokenize()
     # if args.tokenize:
     #     print(toks)
@@ -74,6 +68,8 @@ if __name__ == "__main__":
     if args.parse:
         print(parse_tree)
         sys.exit()
+
+    parse_tree.validate_types()
 
     prog = parse_tree.to_ir_program()
     if args.cfg:
@@ -96,3 +92,4 @@ if __name__ == "__main__":
     if args.vn:
         print(prog)
         sys.exit()
+

@@ -5,7 +5,7 @@ from minipython.ir.expressions import *
 from minipython.ir.phi import *
 from minipython.ir.program import *
 from minipython.ir.statements import *
-from minipython.optimizations.optimzations import *
+from minipython.optimizations.optimizations import *
 from minipython.parser.ast.ast_node import *
 from minipython.parser.ast.astclass import *
 from minipython.parser.ast.expressions import *
