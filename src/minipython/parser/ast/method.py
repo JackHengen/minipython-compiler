@@ -16,6 +16,8 @@ class Method(ASTNode):
     return_t:str
 
     def to_ir(self,prog:IRProgram):
+        prog.curr_types.update(self.args)
+        prog.curr_types.update(self.local_vars)
         for s in self.statements:
             s.to_ir(prog)
 

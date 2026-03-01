@@ -10,17 +10,17 @@ if TYPE_CHECKING:
     from .statements import IRStatement
     from .array import IRArray
     from .control_transfer import IRControlTransfer
+    from ..parser.ast.astclass import Class
 
 @dataclass
 class IRProgram:
     vtbls: list[IRArray]
-    field_maps: list[IRArray]
-    field_name_to_map_index: dict[str, int]
-    mthd_name_to_vtbl_index: dict[str, int]
+    mthd_name_to_vtbl_index:  dict[str,int]
+    classes: dict[str,Class]
+    curr_types: dict[str,str] = field(default_factory=dict)
     blocks: list[IRBasicBlock] = field(default_factory=list)
     curr_block:IRBasicBlock = None
     tmp_count:int = 0
-    curr_class:Class= None
 
     def add_block(self,block_name:str,args:list=None):
         if args is None:
@@ -47,8 +47,7 @@ class IRProgram:
 
     def __str__(self):
         s = "data:\n"
-        order = [item for pair in zip(self.vtbls,self.field_maps) for item in pair]
-        for arr in order:
+        for arr in self.vtbls:
             s+=f"{arr}\n"
         s += "code:\n\n"
         for b in self.blocks:

@@ -16,12 +16,21 @@ class Class(ASTNode):
     methods:dict[str, Method]
 
     def to_ir(self,prog:IRProgram):
-        prog.curr_class = self
         for m in self.methods.values():
+            prog.curr_types = {"this":self.class_name}
+            prog.curr_types.update(self.fields)
             prog.add_block(self.class_name+m.method_name,["this"]+list(m.args.keys()))
             m.to_ir(prog)
             if not prog.curr_block.ctl_tsf:
                 prog.add_ctl_tsf(IRRet(IRConst(0)))
+
+    def get_field_index(self,field:str):
+        counter = 0
+        for i,f in enumerate(self.fields):
+            if f == field:
+                return i
+        raise Exception("field does not exist")
+
 
     def validate_types(self,classes:dict[str,Class]):
         var_map = {"this":self.class_name}

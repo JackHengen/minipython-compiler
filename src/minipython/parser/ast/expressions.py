@@ -125,16 +125,11 @@ class FieldReadExpression(Expression):
         if not isinstance(expr,IRVar):
             expr = prog.mk_tmp(expr)
 
-        addr = prog.mk_tmp(IROperation(expr,"+",IRConst(8)))
+        
+        expr_class = prog.classes[self.expr.get_type(prog.curr_types,prog.classes)]
+        i = expr_class.get_field_index(self.field_name)
 
-        load = prog.mk_tmp(IRLoad(addr)) # load in fields for class
-
-        base = load
-        field_ind = prog.field_name_to_map_index[self.field_name]
-
-        class_field_ind = prog.mk_tmp(IRGetELT(base,IRConst(field_ind))) # grab field from fields
-
-        return IRGetELT(expr,IRConst(class_field_ind))
+        return IRGetELT(expr,IRConst(1+i))
 
     def get_type(self,type_map:dict[str,str],classes:dict[str,Class]):
         klass = self.expr.get_type(type_map,classes)
@@ -150,21 +145,9 @@ class FieldReadExpression(Expression):
 class NewObjExpression(Expression):
     class_name:str
     def to_ir(self,prog:IRProgram):
-        field_map = None
-        for fm in prog.field_maps:
-            if fm.name.endswith(self.class_name):
-                field_map = fm
-
-        if not field_map:
-            raise NameError(f"No such class {self.class_name}")
-
-        alloc = prog.mk_tmp(IRAlloc(2+len(field_map.vals)))
+        l = len(prog.classes[self.class_name].fields)
+        alloc = prog.mk_tmp(IRAlloc(1+l))
         prog.add_stmt(IRStore(alloc,IRBlockName(f"vtbl{self.class_name}")))
-
-        tmp2 = f"tmp{prog.use_tmp()}"
-        addaddr = prog.mk_tmp(IROperation(alloc,"+",IRConst(8)))
-        prog.add_stmt(IRStore(addaddr,IRBlockName(f"fields{self.class_name}")) )
-
 
         return alloc
 

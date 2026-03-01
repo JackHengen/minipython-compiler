@@ -55,20 +55,14 @@ class AssignFieldStatement(Statement):
         if not isinstance(obj_expr,IRVar):
             obj_expr = prog.mk_tmp(obj_expr)
 
-        addr = prog.mk_tmp(IROperation(obj_expr,"+",IRConst(8)))
-
-        load = prog.mk_tmp(IRLoad(addr)) # load in fields for class
-
-        base = load
-        field_ind = prog.field_name_to_map_index[self.field_name] 
-
-        class_field_ind = prog.mk_tmp(IRGetELT(base,IRConst(field_ind))) # grab field from fields
+        obj_class = prog.classes[self.obj_expr.get_type(prog.curr_types,prog.classes)]
+        i = obj_class.get_field_index(self.field_name) 
 
         val = self.val.to_ir(prog)
         if not isinstance(val,IRVar):
             val = prog.mk_tmp(val)
 
-        prog.add_stmt(IRSetELT(obj_expr,class_field_ind,val))
+        prog.add_stmt(IRSetELT(obj_expr,IRConst(1+i),val))
 
     def validate_types(self,var_map:dict[str,str],classes:dict[str,Class],curr_class:Class,curr_method:Method):
         class_name = self.obj_expr.get_type(var_map,classes)

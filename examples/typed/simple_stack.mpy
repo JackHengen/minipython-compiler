@@ -1,0 +1,38 @@
+class ListNode [
+    fields val:int, next:ListNode
+    method getNext() returning ListNode with locals:
+        return &this.next
+    method getVal() returning int with locals:
+        return &this.val
+]
+class Stack [
+    fields list:ListNode
+    method push(v:int) with locals tmp:ListNode:
+        tmp = @ListNode
+        !tmp.val = v
+        !tmp.next = &this.list
+        !this.list = tmp
+        return 0
+    method pop() with locals tmp:int, head:ListNode:
+        if (&this.list == null:ListNode): {
+            return 0
+        } else {
+            head = &this.list
+            tmp = ^head.getVal()
+            !this.list = ^head.getNext()
+            return tmp
+        }
+]
+
+main with stk:Stack:
+    stk = @Stack
+    !stk.list = null:ListNode
+    _ = ^stk.push(1)
+    _ = ^stk.push(3)
+    _ = ^stk.push(5)
+    _ = ^stk.push(9)
+    print(^stk.pop())
+    print(^stk.pop())
+    print(^stk.pop())
+    print(^stk.pop())
+    print(^stk.pop())
