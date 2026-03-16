@@ -1,0 +1,21 @@
+class A [
+ fields val:int, next:A
+ 
+ method func(y:int) returning int with locals x:A:
+  x = @A
+  !x.next = @A
+  !&x.next.val = y
+  !x.val = (y+y)
+]
+
+main with x:A, y:int:
+ y=10
+ x = @A
+ !x.next = @A
+ !&x.next.val = y
+ while ( y > 0 ): {
+  y = (y - 1)
+  print(1)
+  _ = ^x.func(y)
+ }
+ print(&&x.next.val)

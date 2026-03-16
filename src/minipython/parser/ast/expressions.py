@@ -146,7 +146,19 @@ class NewObjExpression(Expression):
     class_name:str
     def to_ir(self,prog:IRProgram):
         l = len(prog.classes[self.class_name].fields)
+        if l >= 64:
+            raise Exception(f"No more than 64 fields allowed: Class {self.class_name} has {l} fields")
+
+        gcmap = 0
+        counter = 1
+        for typ in prog.classes[self.class_name].fields.values():
+            if typ != "int":
+                gcmap |= (1 << counter)
+            counter += 1
+
         alloc = prog.mk_tmp(IRAlloc(1+l))
+        ind = prog.mk_tmp(IROperation(alloc,"-",IRConst(8)))
+        prog.add_stmt(IRStore(ind,IRConst(gcmap)))
         prog.add_stmt(IRStore(alloc,IRBlockName(f"vtbl{self.class_name}")))
 
         return alloc
